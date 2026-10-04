@@ -26,15 +26,12 @@
 
 
 void PyPerformTouchAttack_PatchedCallToHitProcessing(D20Actn * pd20A, D20Actn d20A, uint32_t savedesi, uint32_t retaddr, PyObject * pyObjCaller, PyObject * pyTupleArgs);
-void enlargeSpellRestoreModelScaleHook(objHndl objHnd);
-void enlargeSpellIncreaseModelScaleHook(objHndl objHnd);
 
 // Spell Condition Fixes (for buggy spell effects)
 class SpellConditionFixes : public TempleFix {
 public:
 #define SPFIX(fname) static int fname ## (DispatcherCallbackArgs args);
 	void VampiricTouchFix();
-	void enlargePersonModelScaleFix(); // fixes ambiguous float point calculations that resulted in cumulative roundoff errors
 	static void SpellDamageWeaponlikeHook(objHndl tgt, objHndl caster, int dicePacked, DamageType damType, int attackPower, D20ActionType actionType, int spellId, D20CAF flags ); // allows for sneak attack damage on chill touch
 
 	static int ImmunityCheckHandler(DispatcherCallbackArgs args);
@@ -64,11 +61,14 @@ public:
 	static int AidOnAddTempHp(DispatcherCallbackArgs args);
 
 	static int GhoulTouchAttackHandler(DispatcherCallbackArgs args);
+	static int ChillTouchAttackHandler(DispatcherCallbackArgs args);
 	static int HoldXOnAdd(DispatcherCallbackArgs args); // used in the various paralyzing spells to add the "Held" effect
 
 	static int DivinePowerToHitAsFighter(DispatcherCallbackArgs args);
 
 	static int MagicCirclePreventDamage(DispatcherCallbackArgs args);
+
+	static int RageBeginSpell(DispatcherCallbackArgs args);
 
 	static int SpikeStonesHitTrigger(DispatcherCallbackArgs args);
 	static int SpikeGrowthHitTrigger(DispatcherCallbackArgs args);
@@ -80,6 +80,8 @@ public:
 	static int SpellResistance_SpellResistanceMod(DispatcherCallbackArgs args);
 
 	static int SuggestionOnAdd(DispatcherCallbackArgs args);
+
+	static int SilenceBegin(DispatcherCallbackArgs args);
 
 	void apply() override {
 
@@ -95,6 +97,9 @@ public:
 		// Ghoul touch - not allowing saving throw
 		replaceFunction(0x100D4A00, GhoulTouchAttackHandler);
 
+		// Chill touch - various fixes
+		replaceFunction(0x100DCB80, ChillTouchAttackHandler);
+
 		// Aid Spell fixed amount of HP gained to be 1d8 + 1/caster level
 		replaceFunction(0x100CBE00, AidOnAddTempHp);
 
@@ -106,6 +111,22 @@ public:
 
 		// False life fails to use maximize and empower
 		replaceFunction(0x100CD6D0, Condition_sp_False_Life_Init);
+
+		//Ability Score fixes.  Currently just fixing death knell.
+		static int (*origAbilityScoreBonus)(DispatcherCallbackArgs) =
+			replaceFunction<int(__cdecl)(DispatcherCallbackArgs)>(0x100C5C30,
+				[](DispatcherCallbackArgs args) {
+					auto dispIo = static_cast<DispIoBonusList*>(args.dispIO);
+					if (args.GetData2() == 0xbc && args.GetData1() == (args.dispKey - 1)) {  //Check for death knell mes line and matching bonus type
+						dispIo->bonlist.AddBonus(2, 100, 0xbc);  //Death knell ability bonus will be 100 (it is an unnamed bonus and should stack)
+					}
+					else {
+						return origAbilityScoreBonus(args);
+					}
+					return 0;
+			});
+		// Rage wasn't breaking concentration
+		replaceFunction(0x100CF070, RageBeginSpell);
 
 		// Invisibility Sphere lacking a Dismiss handler
 		{
@@ -123,7 +144,7 @@ public:
 
 		static int(__cdecl*orgSpell_remove_spell)(DispatcherCallbackArgs) = replaceFunction<int(DispatcherCallbackArgs)>(0x100D7620, [](DispatcherCallbackArgs args) {
 			// fixes not removing Invisibility if target != caster
-			// fixes handling of Calm Emotions
+			// fixes handling of Calm Emotions, Rage
 
 			DispIoD20Signal *evtObj = nullptr;
 			if (args.dispIO)
@@ -240,10 +261,47 @@ public:
 				return 0;
 			}
 
+			// Rage
+			if (spPkt.spellEnum == 547) {
+				auto caster = spPkt.caster;
+				pySpellIntegration.SpellSoundPlay(&spPkt, SpellEvent::EndSpellCast);
+				d20Sys.d20SendSignal(caster, DK_SIG_Spell_End, spellId, 0);
+				spPkt.EndPartsysForTgtObj(args.objHndCaller);
+				if (!spPkt.RemoveObjFromTargetList(args.objHndCaller)) {
+					logger->debug("Spell_Remove_Spell: could not end Rage");
+					return 0;
+				}
+				if (spellSys.SpellEnd(spellId, 0)) {
+					gameSystems->GetParticleSys().End(spPkt.casterPartsysId);
+					d20Sys.d20SendSignal(caster, DK_SIG_Remove_Concentration, spellId, 0);
+				}
+				args.RemoveCondition();
+				return 0;
+			}
+
 			// Invisibility
 			if (spPkt.spellEnum == 253){ 
 				if (ShouldRemoveInvisibility(args.objHndCaller, evtObj, args) && spPkt.targetCount && spPkt.targetListHandles[0])
 					d20Sys.d20SendSignal(spPkt.targetListHandles[0], DK_SIG_Spell_End, spellId, 0);
+			}
+
+			// Enlarge/Reduce fixes
+			switch (spPkt.spellEnum) {
+			case 152: // Enlarge Person
+			case 551: // Reduce Animal
+			case 386: // Reduce Person
+			case 404: // Righteous Might
+				// signal that there's nothing to dismiss anymore
+				d20Sys.d20SendSignal(spPkt.caster, DK_SIG_Spell_End, spellId, 0);
+			case 7: // Animal Growth
+				d20Sys.d20SendSignal(args.objHndCaller, DK_SIG_Spell_End, spellId, 0);
+				spPkt.EndPartsysForTgtObj(args.objHndCaller);
+				spPkt.RemoveObjFromTargetList(args.objHndCaller);
+				pySpellIntegration.SpellSoundPlay(&spPkt, SpellEvent::EndSpellCast);
+				spellSys.SpellEnd(spellId, 0);
+				args.RemoveSpellMod();
+				critterSys.UpdateModelEquipment(args.objHndCaller);
+				return 0;
 			}
 			
 			SpellEntry spEntry(spPkt.spellEnum);
@@ -297,7 +355,6 @@ public:
 		replaceFunction(0x100CE940, MelfsAcidArrowDamage);
 
 		VampiricTouchFix();
-		enlargePersonModelScaleFix();
 
 		// Replaces sp-WebOn movement speed hook
 		replaceFunction(0x100CB700, WebOnMoveSpeed);
@@ -317,6 +374,16 @@ public:
 
 		// Grease fix for Freedom of Movement
 		replaceFunction(0x100C8270, GreaseSlippage);
+
+		// Don't bother trying to 'break free' of Hold X while freedom of movement
+		// is active; it wastes your turn if you succeed.
+		static int (*origHoldBreakFree)(DispatcherCallbackArgs) =
+			replaceFunction<int(__cdecl)(DispatcherCallbackArgs)>(0x100C3FE0,
+					[](DispatcherCallbackArgs args) {
+						if (!d20Sys.d20Query(args.objHndCaller, DK_QUE_Critter_Has_Freedom_of_Movement))
+							return origHoldBreakFree(args);
+						return 0;
+					});
 
 		static int (*orgImmunityCheckHandler )(DispatcherCallbackArgs)= replaceFunction<int(__cdecl)(DispatcherCallbackArgs)>(0x100ED650, [](DispatcherCallbackArgs args)
 		{
@@ -402,6 +469,8 @@ public:
 
 		replaceFunction(0x100D62E0, SpikeGrowthHitTrigger);
 
+		replaceFunction(0x100CF760, SilenceBegin);
+
 		replaceFunction(0x100CAA30, SpellResistance_SpellResistanceMod); // fixes Spell Resistance stacking
 		{ // Remove ImmunityCheck hook
 			SubDispDefNew sdd(dispTypeSpellImmunityCheck, DK_NONE, [](DispatcherCallbackArgs args)->int {
@@ -425,7 +494,28 @@ public:
 			return 0;
 			});
 
-		
+		// Animal Growth stat modifiers
+		replaceFunction<int(DispatcherCallbackArgs)>(0x100C60E0, [](DispatcherCallbackArgs args)->int {
+				auto dispIo = dispatch.DispIoCheckIoType2(args.dispIO);
+				Stat statDispatched = static_cast<Stat>(args.dispKey - 1);
+				Stat statTarget = static_cast<Stat>(args.GetData1());
+				int amount = args.GetData2();
+
+				if (statDispatched != statTarget) return 0;
+
+				switch(statTarget)
+				{
+				case stat_strength:
+				case stat_constitution:
+					dispIo->bonlist.AddBonus(amount, 20, 274);
+					break;
+				case stat_dexterity:
+					dispIo->bonlist.AddBonus(-amount, 20, 274);
+				default:
+					break;
+				}
+				return 0;
+		});
 
 		// Righteous Might Stat Bonus
 		replaceFunction<int(DispatcherCallbackArgs)>(0x100CA440, [](DispatcherCallbackArgs args)->int {
@@ -433,10 +523,10 @@ public:
 			auto statDispatched = (Stat)(args.dispKey - 1);
 			if (statDispatched == args.GetData1()) {
 				if (statDispatched == stat_strength) {
-					dispIo->bonlist.AddBonus(4, 35, args.GetData2());
+					dispIo->bonlist.AddBonus(4, 20, args.GetData2());
 				}
 				if (statDispatched == stat_constitution) {
-					dispIo->bonlist.AddBonus(2, 35, args.GetData2());
+					dispIo->bonlist.AddBonus(2, 20, args.GetData2());
 				}
 			}
 			return 0;
@@ -494,14 +584,6 @@ void SpellConditionFixes::VampiricTouchFix()
 	//Perform Touch Attack mod:
 	//redirectCall(0x100B2CC9, PyPerformTouchAttack_PatchedCallToHitProcessing); // done directly in python_object.cpp now
 	return;
-}
-
-void SpellConditionFixes::enlargePersonModelScaleFix()
-{
-	redirectCall(0x100CD45C, enlargeSpellIncreaseModelScaleHook);
-	redirectCall(0x100D84DE, enlargeSpellRestoreModelScaleHook); // sp152 enlarge 
-	redirectCall(0x100D9C22, enlargeSpellRestoreModelScaleHook); // sp404 righteous might
-
 }
 
 void SpellConditionFixes::SpellDamageWeaponlikeHook(objHndl tgt, objHndl caster, int dicePacked, DamageType damType, int attackPower, D20ActionType actionType, int spellId, D20CAF flags){
@@ -780,25 +862,6 @@ void PyPerformTouchAttack_PatchedCallToHitProcessing( D20Actn * pd20A, D20Actn d
 	return;
 	
 }
-
-void __cdecl enlargeSpellRestoreModelScaleHook(objHndl objHnd)
-{
-	// patches for spellRemove function (disgusting hardcoded shit! bah!)
-	uint32_t modelScale = objects.getInt32(objHnd, obj_f_model_scale);
-	modelScale *= 5;
-	modelScale /= 9;
-	objects.setInt32(objHnd, obj_f_model_scale, modelScale);
-}
-
-void enlargeSpellIncreaseModelScaleHook(objHndl objHnd)
-{
-	uint32_t modelScale = objects.getInt32(objHnd, obj_f_model_scale);
-	modelScale *= 9;
-	modelScale /= 5;
-	objects.setInt32(objHnd, obj_f_model_scale, modelScale);
-}
-
-
 
 int SpellConditionFixes::StinkingCloudObjEvent(DispatcherCallbackArgs args)
 {
@@ -1121,7 +1184,8 @@ int SpellConditionFixes::AidOnAddTempHp(DispatcherCallbackArgs args){
 	return 0;
 }
 
-int SpellConditionFixes::GhoulTouchAttackHandler(DispatcherCallbackArgs args){
+int SpellConditionFixes::GhoulTouchAttackHandler(DispatcherCallbackArgs args)
+{
 	GET_DISPIO(dispIoTypeSendSignal, DispIoD20Signal);
 	auto d20a = (D20Actn*)dispIo->data1;
 	
@@ -1144,8 +1208,11 @@ int SpellConditionFixes::GhoulTouchAttackHandler(DispatcherCallbackArgs args){
 	
 	
 	auto tgt = d20a->d20ATarget;
+
+	auto casterParticles = spellPkt.targetListPartsysIds[0];
 	
 	if (spellSys.CheckSpellResistance(&spellPkt, tgt) == TRUE){
+		gameSystems->GetParticleSys().End(casterParticles);
 		args.RemoveSpellMod();
 		args.RemoveCondition();
 		return 0;
@@ -1153,6 +1220,7 @@ int SpellConditionFixes::GhoulTouchAttackHandler(DispatcherCallbackArgs args){
 
 	// Fixed target not getting a saving throw
 	if (spellPkt.SavingThrow(tgt, D20SavingThrowFlag::D20STF_SPELL_SCHOOL_NECROMANCY)){
+		gameSystems->GetParticleSys().End(casterParticles);
 		args.RemoveSpellMod();
 		args.RemoveCondition();
 		return 0;
@@ -1169,9 +1237,6 @@ int SpellConditionFixes::GhoulTouchAttackHandler(DispatcherCallbackArgs args){
 	if (!conds.AddTo(tgt, "sp-Ghoul Touch Stench", {spellId, duration, 0 , gtParticles })){
 		logger->debug("GhoulTouchAttackHandler: unable to add condition");
 	}
-
-	auto casterParticles = spellPkt.targetListPartsysIds[0];
-	
 
 	spellPkt.targetListHandles[0] = tgt;
 	spellPkt.targetListPartsysIds[0] = gtParticles;
@@ -1190,6 +1255,101 @@ int SpellConditionFixes::GhoulTouchAttackHandler(DispatcherCallbackArgs args){
 		logger->debug("GhoulTouchAttackHandler: Cannot remove target");
 		return 0;
 	}
+	return 0;
+}
+
+int SpellConditionFixes::ChillTouchAttackHandler(DispatcherCallbackArgs args)
+{
+	auto dispIo = dispatch.DispIoCheckIoType6(args.dispIO);
+	if (!dispIo) return 0;
+
+	// this copy allows us to end the spell successfully
+	auto argsCopy = args;
+	argsCopy.dispIO = nullptr;
+
+	auto attacker = args.objHndCaller;
+	auto d20a = reinterpret_cast<D20Actn *>(dispIo->data1);
+
+	if (!(d20a->d20Caf & D20CAF_HIT)) {
+		// "Touch Attack Missed"
+		combatSys.FloatCombatLine(attacker, 69);
+		return 0;
+	}
+
+	auto spellId = args.GetCondArg(0);
+	SpellPacketBody spellPkt(spellId);
+	auto target = d20a->d20ATarget;
+	auto caster = spellPkt.caster;
+	if (spellPkt.spellEnum == 0) return 0;
+
+	// This was in the original.
+	pySpellIntegration.SpellSoundPlay(&spellPkt, SpellEvent::AreaOfEffectHit);
+	// "Touch Attack Hit"
+	combatSys.FloatCombatLine(attacker, 68);
+
+	int chargesRemaining = args.GetCondArg(2) - 1;
+	args.SetCondArg(2, chargesRemaining);
+	spellPkt.durationRemaining = chargesRemaining;
+	spellPkt.UpdateSpellsCastRegistry();
+	spellPkt.UpdatePySpell();
+
+	if (spellPkt.CheckSpellResistance(target)) {
+		if (chargesRemaining <= 0) {
+			floatSys.FloatSpellLine(attacker, 20000, FloatLineColor::White);
+			argsCopy.RemoveSpell();
+			argsCopy.RemoveSpellMod();
+		}
+		return 0;
+	}
+
+	uint32_t flags = D20STF_SPELL_SCHOOL_NECROMANCY;
+	auto dc = spellPkt.dc;
+
+	if (critterSys.IsCategoryType(target, mc_type_undead)) {
+		auto type = SavingThrowType::Will;
+		if (damage.SavingThrowSpell(target, caster, dc, type, flags, spellId)) {
+			// saving throw successful
+			floatSys.FloatSpellLine(target, 30001, FloatLineColor::White);
+		} else {
+			// saving throw failed
+			floatSys.FloatSpellLine(target, 30002, FloatLineColor::White);
+			Dice dice(1, 4, spellPkt.casterLevel);
+			vector<int> args = { dice.Roll(), 0 };
+			conds.AddTo(target, "Chill Touch Fear", args);
+		}
+	} else {
+		auto type = SavingThrowType::Fortitude;
+		Dice dice(1, 6, 0);
+
+		damage.DealWeaponlikeSpellDamage
+			(	target
+			, caster
+			, dice
+			, DamageType::NegativeEnergy
+			, static_cast<int>(D20DAP_UNSPECIFIED)
+			, 100 // 100%
+			, 103 // "Unknown"
+			, d20a->d20ActType
+			, spellId
+			, static_cast<D20CAF>(d20a->d20Caf)
+			);
+
+		if (damage.SavingThrowSpell(target, caster, dc, type, flags, spellId)) {
+			floatSys.FloatSpellLine(target, 30001, FloatLineColor::White);
+		} else {
+			floatSys.FloatSpellLine(target, 30002, FloatLineColor::White);
+			// Ability Drained!
+			floatSys.FloatSpellLine(target, 20022, FloatLineColor::Red);
+
+			conds.AddTo(target, "Temp_Ability_Loss", { 0, 1 });
+		}
+	}
+
+	if (chargesRemaining <= 0) {
+		argsCopy.RemoveSpell();
+		argsCopy.RemoveSpellMod();
+	}
+
 	return 0;
 }
 
@@ -1296,6 +1456,26 @@ int SpellConditionFixes::MagicCirclePreventDamage(DispatcherCallbackArgs args)
 		return 0;
 	}
 	dispIo->damage.AddModFactor(0.0, DamageType::Unspecified, 104);
+	return 0;
+}
+
+int SpellConditionFixes::RageBeginSpell(DispatcherCallbackArgs args)
+{
+	auto spellId = args.GetCondArg(0);
+	auto target = args.objHndCaller;
+	SpellPacketBody spellPkt(spellId);
+
+	if (!spellPkt.spellEnum) return 0;
+
+	conds.AddTo(spellPkt.caster, "sp-Concentrating", { spellId, 0, 0 });
+	floatSys.FloatSpellLine(target, 20046u, FloatLineColor::Red);
+
+	if (!d20Sys.d20Query(target, DK_QUE_Critter_Is_Concentrating)) return 0;
+
+	auto otherId =
+		d20Sys.d20QueryReturnData(target, DK_QUE_Critter_Is_Concentrating);
+	d20Sys.d20SendSignal(target, DK_SIG_Remove_Concentration, otherId);
+
 	return 0;
 }
 
@@ -1501,6 +1681,36 @@ int SpellConditionFixes::SuggestionOnAdd(DispatcherCallbackArgs args)
 		critterSys.AddFollower(args.objHndCaller, pkt.caster, 1, 1);
 	}
 	args.SetCondArg(2, 1);
+	return 0;
+}
+
+/* 100CF760 */
+int SpellConditionFixes::SilenceBegin(DispatcherCallbackArgs args)
+{
+	auto spellId = args.GetCondArg(0);
+	SpellPacketBody pkt(spellId);
+	SpellEntry ent(pkt.spellEnum);
+	MetaMagicData mm(pkt.metaMagicData);
+	auto wide = mm.metaMagicWidenSpellCount;
+	objHndl center = args.objHndCaller;
+
+	float radius = ent.radiusTarget * (1+wide) * 12.0;
+
+	pkt.aoeObj = center;
+	auto evtId = objEvents.EventAppend(center, 32, 33, OLC_CRITTERS, radius, 0.0, XM_2PI);
+	args.SetCondArg(2, evtId);
+
+	auto partId = args.GetCondArg(3);
+
+	auto objIdx = pkt.numSpellObjs;
+	if (objIdx < 128) {
+		pkt.spellObjs[objIdx].obj = center;
+		pkt.spellObjs[objIdx].partySysId = partId;
+		pkt.numSpellObjs++;
+	}
+
+	spellSys.UpdateSpellPacket(pkt);
+	pySpellIntegration.UpdateSpell(spellId);
 	return 0;
 }
 

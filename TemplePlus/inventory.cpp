@@ -12,6 +12,7 @@
 #include "party.h"
 #include "rng.h"
 #include "gamesystems/legacysystems.h"
+#include <infrastructure/meshes.h>
 #include "ai.h"
 #include "animgoals/anim.h"
 #include "gamesystems/objects/objevent.h"
@@ -192,7 +193,7 @@ public:
 		});
 
 		replaceFunction<int(__cdecl)(objHndl, objHndl)>(0x10066730, [](objHndl item, objHndl wielder){
-			return inventory.GetWeaponAnimId(item, wielder);
+			return (int)inventory.GetWeaponAnimId(item, wielder);
 		});
 
 		replaceFunction<int(__cdecl)(objHndl, objHndl, objHndl, SkillEnum)>(0x10069970, [](objHndl item, objHndl appraiser, objHndl vendor, SkillEnum skillEnum) {
@@ -201,6 +202,11 @@ public:
 
 		replaceFunction<int(__cdecl)(objHndl, objHndl, objHndl, int)>(0x100698E0, [](objHndl item, objHndl parent, objHndl appraiser, int skillIdx) {
 			return inventory.GetAppraisedTransactionSum(item, parent, appraiser, (SkillEnum)skillIdx);
+		});
+
+		// GetWieldType
+		replaceFunction<int(__cdecl)(objHndl, objHndl)>(0x10066580, [](objHndl wielder, objHndl item) {
+			return inventory.GetWieldType(wielder, item, false);
 		});
 	};
 
@@ -599,16 +605,21 @@ int InventorySystem::SetItemParent(objHndl item, objHndl parent, int flags)  {
 	return SetItemParent(item, parent, (ItemInsertFlags)flags);
 }
 
-int InventorySystem::IsNormalCrossbow(objHndl weapon)
+bool InventorySystem::IsLoadableWeapon(objHndl weapon, bool strict)
 {
-	if (objects.GetType(weapon) == obj_t_weapon)
+	if (objects.GetType(weapon) != obj_t_weapon) return false;
+
+	switch (objects.GetWeaponType(weapon))
 	{
-		auto weapType = objects.GetWeaponType(weapon);
-		if (weapType == wt_heavy_crossbow || weapType == wt_light_crossbow)
-			return TRUE; // TODO: should this include repeating crossbow? I think the context is reloading action in some cases
-		// || weapType == wt_hand_crossbow
+	case wt_light_crossbow:
+	case wt_heavy_crossbow:
+		return true;
+	case wt_sling:
+		return strict || config.stricterRulesEnforcement;
+	// TODO: should this include repeating crossbow? hand crossbow?
+	default:
+		return false;
 	}
-	return FALSE;
 }
 
 int InventorySystem::IsThrowingWeapon(objHndl weapon)
@@ -691,6 +702,13 @@ ArmorType InventorySystem::GetArmorType(int armorFlags)
 	if (armorFlags & ARMOR_TYPE_NONE)
 		return ARMOR_TYPE_NONE;
 	return (ArmorType) (armorFlags & (ARMOR_TYPE_LIGHT | ARMOR_TYPE_MEDIUM | ARMOR_TYPE_HEAVY) );
+}
+
+ArmorType InventorySystem::GetArmorType(objHndl armor)
+{
+	if (!armor) return ARMOR_TYPE_NONE;
+
+	return GetArmorType(objects.getInt32(armor, obj_f_armor_flags));
 }
 
 BOOL InventorySystem::GetQuantityField(const objHndl item, obj_f* qtyField){
@@ -1517,11 +1535,13 @@ int32_t InventorySystem::GetCoinWorth(int32_t coinType){
 	return 0u;
 }
 
+// 0: light weapon
+// 1: 1-handed weapon
+// 2: 2-handed weapon
+// 3: bastard sword/dwarf waraxe too big to wield
+// 4: null weapon
 int InventorySystem::GetWieldType(objHndl wielder, objHndl item, bool regardEnlargement) const
 {
-	if (!regardEnlargement)
-		return _GetWieldType(wielder, item);
-
 	if (!item)
 		return 4;
 
@@ -1531,11 +1551,19 @@ int InventorySystem::GetWieldType(objHndl wielder, objHndl item, bool regardEnla
 	if (itemType == obj_t_armor){
 		auto armorFlags = itemObj->GetInt32(obj_f_armor_flags);
 		auto armorType = inventory.GetArmorType(armorFlags);
-		if (armorType == ArmorType::ARMOR_TYPE_SHIELD || armorType == ArmorType::ARMOR_TYPE_NONE)
-			return  ( itemObj->GetInt32(obj_f_item_wear_flags) & OIF_WEAR::OIF_WEAR_BUCKLER ) != OIF_WEAR::OIF_WEAR_BUCKLER;
+		if (armorType == ArmorType::ARMOR_TYPE_SHIELD) {
+			// if we can shield bash, fall through to use size based 
+			if (!d20Sys.d20Query(wielder, DK_QUE_Can_Shield_Bash)) {
+				if (IsBuckler(item)) return 0;
+				return 3;
+			}
+		} else if (armorType == ArmorType::ARMOR_TYPE_NONE) {
+			// uncertain what this case is, but it was in the original
+			return !IsBuckler(item);
+		}
 	}
 
-	
+
 	auto wielderSize = critterSys.GetSize(wielder);
 	auto wielderSizeBase = regardEnlargement ? gameSystems->GetObj().GetObject(wielder)->GetInt32(obj_f_size) : wielderSize;
 	auto itemSize = itemObj->GetInt32(obj_f_size);
@@ -1554,7 +1582,7 @@ int InventorySystem::GetWieldType(objHndl wielder, objHndl item, bool regardEnla
 	{
 		wieldType = 2;
 	} 
-	else if (itemSize == wielderSize + 1 )
+	else if (itemSize == wielderSize + 1)
 	{
 		wieldType = 2;
 	}
@@ -1585,7 +1613,14 @@ int InventorySystem::GetWieldType(objHndl wielder, objHndl item, bool regardEnla
 		return wieldType;
 	}
 
-	if (feats.HasFeatCountByClass(wielder, FEAT_EXOTIC_WEAPON_PROFICIENCY_DWARVEN_WARAXE) || objects.StatLevelGet(wielder, stat_race) == race_dwarf)
+	auto hasExotic = feats.HasFeatCountByClass(wielder, FEAT_EXOTIC_WEAPON_PROFICIENCY_DWARVEN_WARAXE);
+	auto isDwarf = objects.StatLevelGet(wielder, stat_race) == race_dwarf;
+	// TODO: make a specific martial feat that no one will ever take?
+	auto hasMartial = feats.HasFeatCountByClass(wielder, FEAT_MARTIAL_WEAPON_PROFICIENCY_ALL);
+	// only require martial proficiency if strict enforcement is on
+	hasMartial |= !config.stricterRulesEnforcement;
+
+	if (hasExotic || (isDwarf && hasMartial))
 	{
 		return wieldType;
 	} 
@@ -1598,15 +1633,165 @@ int InventorySystem::GetWieldType(objHndl wielder, objHndl item, bool regardEnla
 	return 2 * (wielderSize <= 5) + 1;	
 }
 
-int InventorySystem::GetWeaponAnimId(objHndl item, objHndl wielder){
-	auto wieldType = GetWieldType(wielder, item, false); // TODO overhaul this...
-	if (wieldType == 2){
-		return temple::GetRef<int[74]>(0x102BE668)[objects.getInt32(item, obj_f_weapon_type)]; // two handed anims
+bool InventorySystem::IsFinesse(objHndl wielder, objHndl weapon) const
+{
+	// natural weapons are light
+	if (!weapon) return true;
+
+	auto wieldType = GetWieldType(wielder, weapon, true);
+	auto weapType =
+		static_cast<WeaponTypes>(objects.getInt32(weapon, obj_f_weapon_type));
+
+	if (wieldType == 0) return true; // light weapon
+
+	// base sizes, to ignore enlarge/reduce
+	auto weapSize = objects.getInt32(weapon, obj_f_size);
+	auto wieldSize = objects.getInt32(wielder, obj_f_size);
+
+	switch (weapType)
+	{
+	case wt_rapier:
+	case wt_spike_chain:
+		// rapiers and spiked chains of appropriate size can be finessed
+		return weapSize <= wieldSize;
+	default:
+		return false;
 	}
-	if (wieldType != 1 && wieldType != 0){
-		return 0;
+}
+
+bool InventorySystem::IsWieldedTwoHanded(objHndl weapon, objHndl wielder, bool special){
+	if (!weapon) return false;
+
+	auto weapObj = gameSystems->GetObj().GetObject(weapon);
+	auto weapType = (WeaponTypes)weapObj->GetInt32(obj_f_weapon_type);
+
+	// special case - rapiers are always wielded one handed
+	if (weapType == wt_rapier){
+		return false;
 	}
-	return temple::GetRef<int[74]>(0x102BE540)[objects.getInt32(item, obj_f_weapon_type)]; // single handed anims
+
+	auto offhandWeapon = ItemWornAt(wielder, EquipSlot::WeaponSecondary);
+	auto shield = ItemWornAt(wielder, EquipSlot::Shield);
+  // are you holding the weapon with your buckler hand?
+	bool shieldAllowsTwoHandedWield = (shield != objHndl::null) && IsBuckler(shield);
+	if (shieldAllowsTwoHandedWield){
+		if (d20Sys.d20Query(wielder, DK_QUE_Is_Preferring_One_Handed_Wield))
+			shieldAllowsTwoHandedWield = false;
+	}
+	bool hasInterferingOffhand = false;
+	if (offhandWeapon != objHndl::null){
+		hasInterferingOffhand = true;
+	}
+	if (shield != objHndl::null){
+		hasInterferingOffhand |= !shieldAllowsTwoHandedWield;
+	}
+	auto wieldType = GetWieldType(wielder, weapon, true);
+	// the wield type if the weapon is not enlarged along with the critter
+	auto wieldTypeMod = GetWieldType(wielder, weapon, false);
+
+	bool isTwohandedWieldable = !hasInterferingOffhand && !special;
+
+	switch (wieldType)
+	{
+	case 0: // light weapon
+		switch (wieldTypeMod)
+		{
+		case 0:
+			isTwohandedWieldable = false;
+			break;
+		case 1: // benefitting from enlargement of weapon
+		case 2:
+		default:
+			break;
+		}
+	case 1: // single handed wield if weapon is unaffected
+		switch (wieldTypeMod)
+		{
+		case 0: // only in reduce person; going to assume the "beneficial" case that the reduction was made voluntarily and hence you let the weapon stay larger
+		case 1:
+		case 2:
+		default:
+			break;
+		}
+	case 2: // two handed wield if weapon is unaffected
+		switch (wieldTypeMod)
+		{
+		case 0:
+		case 1: // only in reduce person
+			break;
+		case 2:
+			if (hasInterferingOffhand) // shouldn't really be possible to hold two Two Handed Weapons... maybe if player is cheating
+			{
+				logger->warn("Illegally wielding weapon along withoffhand!");
+			}
+		default:
+			break;
+		}
+	case 3:
+		break;
+	case 4:
+	default:
+		break;
+	}
+
+	return isTwohandedWieldable;
+}
+
+
+
+gfx::WeaponAnimType InventorySystem::GetWeaponAnimId(objHndl item, objHndl wielder, bool special){
+	auto weap = objSystem->GetObject(item);
+	auto wieldType = GetWieldType(wielder, item, false);
+	WeaponTypes wtype = (WeaponTypes)weap->GetInt32(obj_f_weapon_type);
+
+	if (wieldType == 4) return gfx::WeaponAnimType::Unarmed;
+	if (IsWieldedTwoHanded(item, wielder, special)) {
+		switch (wtype)
+		{
+		case WeaponTypes::wt_short_sword:
+			// cutlass is a slashing shortsword
+			if (weap->GetInt32(obj_f_weapon_attacktype) == (int32_t)DamageType::Slashing)
+				return gfx::WeaponAnimType::Greatsword;
+			else
+				return gfx::WeaponAnimType::Spear;
+		// piercing weapons
+		case WeaponTypes::wt_dagger:
+		case WeaponTypes::wt_rapier:
+			return gfx::WeaponAnimType::Spear;
+		case WeaponTypes::wt_orc_double_axe:
+		case WeaponTypes::wt_dwarven_urgrosh:
+			if (d20Sys.d20Query(wielder, DK_QUE_Is_Two_Weapon_Fighting) > 1)
+				return gfx::WeaponAnimType::Staff;
+			else
+				return gfx::WeaponAnimType::Greataxe;
+		case WeaponTypes::wt_quarterstaff:
+		case WeaponTypes::wt_gnome_hooked_hammer:
+			if (d20Sys.d20Query(wielder, DK_QUE_Is_Two_Weapon_Fighting) > 1)
+				return gfx::WeaponAnimType::Staff;
+			else
+				return gfx::WeaponAnimType::Greathammer;
+		default:
+			// original two handed anim array
+			return (gfx::WeaponAnimType)temple::GetRef<int[74]>(0x102BE668)[wtype];
+		}
+	} else {
+		switch (wtype)
+		{
+		// piercing weapons
+		case WeaponTypes::wt_short_sword: // was sword
+			// cutlass is a slashing shortsword
+			if (weap->GetInt32(obj_f_weapon_attacktype) == (int32_t)DamageType::Slashing)
+				return gfx::WeaponAnimType::Sword;
+		case WeaponTypes::wt_rapier: // was sword
+			return gfx::WeaponAnimType::Dagger;
+		// slashing weapons
+		case WeaponTypes::wt_kukri: // was dagger
+			return gfx::WeaponAnimType::Sword;
+		default:
+			// original single handed anim array
+			return (gfx::WeaponAnimType)temple::GetRef<int[74]>(0x102BE540)[wtype];
+		}
+	}
 }
 
 obj_f InventorySystem::GetInventoryListField(objHndl objHnd)
@@ -1695,7 +1880,10 @@ void InventorySystem::ForceRemove(objHndl item, objHndl parent){
 	itemObj->SetInt32(obj_f_item_inv_location, -1);
 	
 	if (inventory.IsInvIdxWorn(invIdxOrg)){
-		if (inventory.IsNormalCrossbow(item)) { // unset OWF_WEAPON_LOADED
+		// unset OWF_WEAPON_LOADED
+		// `true` forces in case you've loaded a save with a loaded sling without
+		// strict rules enabled; clears anyway.
+		if (inventory.IsLoadableWeapon(item, true)) {
 			itemObj->SetInt32(obj_f_weapon_flags, itemObj->GetInt32(obj_f_weapon_flags) & ~OWF_WEAPON_LOADED);
 		}
 		static auto inheritLightFlags = temple::GetRef<void(__cdecl)(objHndl, objHndl)>(0x10066260);
@@ -1854,6 +2042,25 @@ bool InventorySystem::IsBuckler(objHndl shield)
 		return false;
 
 	return (gameSystems->GetObj().GetObject(shield)->GetInt32(obj_f_item_wear_flags) & OIF_WEAR::OIF_WEAR_BUCKLER) ? true: false;
+}
+
+bool InventorySystem::IsDoubleWeapon(objHndl weapon)
+{
+	if (!weapon) return false;
+
+	switch (objects.GetWeaponType(weapon))
+	{
+	case wt_quarterstaff:
+	case wt_gnome_hooked_hammer:
+	case wt_orc_double_axe:
+	case wt_dire_flail:
+	case wt_two_bladed_sword:
+	case wt_dwarven_urgrosh:
+		return true;
+
+	default:
+		return false;
+	}
 }
 
 void InventorySystem::ItemRemove(objHndl item)

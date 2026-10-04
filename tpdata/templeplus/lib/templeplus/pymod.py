@@ -3,6 +3,13 @@ import tpdp
 class PythonModifier(tpdp.ModifierSpec):
 	def AddHook(self, eventType, eventKey, callbackFcn, argsTuple ):
 		self.add_hook(eventType, eventKey, callbackFcn, argsTuple)
+	def ReplaceHook(self, ix, eventType, eventKey, callback, params):
+		# Replaces a hook with a python hook.
+		#
+		# Should only be used to replace hooks already in place from
+		# a modifier created with `ExtendExisting`. Trying to replace a
+		# python hook will crash.
+		self.replace_hook(ix, eventType, eventKey, callback, params)
 	def ExtendExisting(self, condName):
 		self.extend_existing(condName)
 	def AddItemForceRemoveHandler(self): # in charge of backing up condition args
@@ -56,3 +63,12 @@ class PythonModifier(tpdp.ModifierSpec):
 	def AddSpellDispelCheckStandard(self):
 		self.add_spell_dispel_check_standard()
 
+class BasicPyMod(tpdp.ModifierSpec):
+	def AddHook(self, eventType, eventKey, callbackFcn, argsTuple):
+		self.add_hook(eventType, eventKey, callbackFcn, argsTuple)
+	def ExtendExisting(self, condName):
+		self.extend_existing(condName)
+
+class FeatPyMod(BasicPyMod):
+	def __init__(self, feat_enum, feat_cond_arg2 = 0, args = 2, preventDuplicate = True, feat_list_max = -1):
+		self.add_to_feat_dict(feat_enum, feat_list_max, feat_cond_arg2)

@@ -411,6 +411,7 @@ ES_F_SLEEP_ENCOUNTER = 1
 
 OBJECT_SPELL_GENERIC = 12003
 OBJECT_SPELL_CLOUDKILL = 12003
+OBJECT_SPELL_BLACK_TENTACLES = 12999
 
 OBJFADE_C_NONE = 0
 OBJFADE_C_OBJ_DESTROY = 1
@@ -851,6 +852,15 @@ Q_Can_Perform_Disarm = 116
 Q_Craft_Wand_Spell_Level = 117
 Q_Is_Ethereal = 118
 Q_Empty_Body_Num_Rounds = 119
+Q_Quivering_Palm_Can_Perform = 120
+Q_Trip_AOO = 121
+Q_Get_Arcane_Spell_Failure = 122
+Q_Is_Preferring_One_Handed_Wield = 123
+Q_Scribe_Scroll_Level = 124
+Q_Critter_Is_Immune_Paralysis = 125
+Q_Is_Two_Weapon_Fighting = 126
+Q_Left_Is_Primary = 127
+Q_Can_Shield_Bash = 128
 
 RADIAL_MENU_PARAM_MIN_SETTING = 1
 RADIAL_MENU_PARAM_MAX_SETTING = 2
@@ -1815,6 +1825,7 @@ mc_subtype_orc = 0x1000000
 mc_subtype_reptilian = 0x2000000
 mc_subtype_slaadi = 0x4000000
 mc_subtype_water = 0x8000000
+mc_subtype_native = 0x10000000
 
 mc_type_aberration = 0
 mc_type_animal = 1
@@ -2307,6 +2318,7 @@ san_exit_combat = 14
 san_start_combat = 15
 san_end_combat = 16
 san_buy_object = 17
+san_resurrect = 18
 san_heartbeat = 19
 san_insert_item = 21
 san_will_kos = 22
@@ -3200,6 +3212,9 @@ spell_mass_hold_monster = 585
 spell_polar_ray = 586
 spell_undeath_to_death = 587
 spell_mass_hold_person = 588
+spell_vigor_lesser = 794
+spell_vigor = 795
+spell_vigor_greater = 796
 spell_vacant = 802
 spell_label_level_0 = 803
 spell_label_level_1 = 804
@@ -3217,6 +3232,8 @@ spell_touch_of_fatigue = 1001
 spell_ray_of_exhaustion = 1002
 spell_waves_of_fatigue = 1003
 spell_waves_of_exhaustion = 1004
+spell_fire_shield_mass = 1005
+spell_prismatic_ray = 1006
 # Reserved for Sagenlicht 1050-1199
 spell_sound_lance = 1050
 spell_critical_strike = 1051
@@ -3337,6 +3354,40 @@ spell_slashing_darkness = 1167
 spell_spikes = 1168
 spell_tremor = 1169
 spell_weapon_of_energy = 1170
+spell_storm_of_elemental_fury = 1171
+spell_acid_fog = 1172
+spell_touch_of_madness = 1173
+spell_energized_shield_lesser = 1174
+spell_energized_shield = 1175
+spell_draconic_might = 1176
+spell_vigor_mass_lesser = 1177
+spell_vigor_mass_improved = 1178
+spell_sure_strike = 1179
+spell_hunters_eye = 1180
+spell_tactical_precision = 1181
+spell_accuracy = 1182
+spell_hail_of_stone = 1183
+spell_lesser_orb_of_acid = 1184
+spell_lesser_orb_of_cold = 1185
+spell_lesser_orb_of_electricity = 1186
+spell_lesser_orb_of_fire = 1187
+spell_lesser_orb_of_sound = 1188
+spell_blades_of_fire = 1189
+spell_fireburst = 1190
+spell_greater_fireburst = 1191
+spell_ice_knife = 1192
+spell_whirling_blade = 1193
+spell_ring_of_blades = 1194
+spell_blast_of_flame = 1195
+spell_orb_of_acid = 1196
+spell_orb_of_cold = 1197
+spell_orb_of_electricity = 1198
+spell_orb_of_fire = 1199
+spell_orb_of_sound = 1200
+spell_icelance = 1201
+spell_revivify = 1202
+
+
 spell_inevitable_defeat = 1302
 spell_kelgores_fire_bolt = 1303
 spell_rouse = 1305
@@ -3358,6 +3409,155 @@ spell_new_slot_lvl_7 = 1612
 spell_new_slot_lvl_8 = 1613
 spell_new_slot_lvl_9 = 1614
 
+# Python Action Spells
+spell_epic_of_the_lost_king = 3080
+spell_grapple = 3110
+spell_black_tentacle_grapple = 3111
+spell_ki_blast = 3120
+
+#Dragon Disciple Breath Weapons
+spell_dragon_diciple_cone_breath = 3231
+spell_dragon_diciple_line_breath = 3232
+
+# Dragon Lineage Spell Like Abilities
+spell_dragon_lineage_black = 3242
+spell_dragon_lineage_blue = 3243
+spell_dragon_lineage_brass = 3244
+spell_dragon_lineage_bronze = 3245
+spell_dragon_lineage_copper = 3246
+spell_dragon_lineage_gold = 3247
+spell_dragon_lineage_green = 3248
+spell_dragon_lineage_red = 3249
+spell_dragon_lineage_silver = 3250
+spell_dragon_lineage_white = 3251
+
+# Marshal Spells
+spell_marshal_minor_aura = 3831
+spell_marshal_major_aura = 3832
+spell_marshal_adrenaline_boost = 3833
+
+# Dragon Shaman Spells
+spell_draconic_aura = 3840
+spell_double_draconic_aura = 3841
+
+# Draconic Feats Spells
+spell_draconic_breath_cone = 3850
+spell_draconic_breath_line = 3851
+
+# Dummy Spells for Python Actions
+spell_dummy_spell_cone_small = 3900
+spell_dummy_spell_cone_medium = 3901
+spell_dummy_spell_cone_large = 3902
+spell_dummy_spell_line_small = 3903
+spell_dummy_spell_line_medium = 3904
+spell_dummy_spell_line_large = 3905
+
+# Dragon Breath Shapes
+dragon_breath_shape_cone = 1
+dragon_breath_shape_line = 2
+
+# Heritage Types
+heritage_draconic_black = 1
+heritage_draconic_blue = 2
+heritage_draconic_brass = 3
+heritage_draconic_bronze = 4
+heritage_draconic_copper = 5
+heritage_draconic_gold = 6
+heritage_draconic_green = 7
+heritage_draconic_red = 8
+heritage_draconic_silver = 9
+heritage_draconic_white = 10
+heritage_celestial_sorcerer = 11
+heritage_fey = 12
+heritage_fiendish = 13
+heritage_infernal_sorcerer = 14
+
+# Aura Types
+aura_type_minor = 1
+aura_type_major = 2
+aura_type_draconic = 3
+aura_type_double_draconic = 4
+
+#Aura Enums
+aura_accurate_strike = 1
+aura_art_of_war = 2
+aura_Demand_fortitude = 3
+aura_Determined_caster = 4
+aura_force_of_will = 5
+aura_master_of_opportunity = 6
+aura_master_of_tactics = 7
+aura_motivate_charisma = 8
+aura_motivate_constitution = 9
+aura_motivate_dexterity = 10
+aura_motivate_intelligence = 11
+aura_motivate_strength = 12
+aura_motivate_wisdom = 13
+aura_over_the_top = 14
+aura_watchful_eye = 15
+aura_hardy_soldiers = 16
+aura_motivate_ardor = 17
+aura_motivate_attack = 18
+aura_motivate_care = 19
+aura_motivate_urgency = 20
+aura_resilient_troops = 21
+aura_steady_hand = 22
+aura_energy_shield = 23
+aura_power = 24
+aura_presence = 25
+aura_resistance = 26
+aura_senses = 27
+aura_toughness = 28
+aura_vigor = 29
+aura_break_spell_resistance = 30
+aura_energy = 31
+aura_insight = 32
+aura_resolve = 33
+aura_stamina = 34
+aura_swiftness =35
+
+#AoE Event Targets
+aoe_event_target_friendly = 1
+aoe_event_target_non_friendly = 2
+aoe_event_target_all = 3
+
+#Bonus Types (aka modifiers)
+bonus_type_untyped = 0
+bonus_type_stat_strength = 2
+bonus_type_stat_dexterity = 3
+bonus_type_stat_constitution = 4
+bonus_type_stat_intelligence = 5
+bonus_type_stat_wisdom = 6
+bonus_type_stat_charisma = 7
+bonus_type_dodge = 8
+bonus_type_natural_armor = 10
+bonus_type_deflection = 11
+bonus_type_enhancement = 12
+bonus_type_morale = 13
+bonus_type_luck = 14
+bonus_type_resistance = 15
+bonus_type_sacred = 17
+bonus_type_insight = 18
+bonus_type_concealment = 19
+bonus_type_size = 20
+bonus_type_circumstance = 21
+bonus_type_alchemical = 151
+bonus_type_profane = 154
+bonus_type_sirines_grace = 155
+bonus_type_sticky_fingers = 156
+bonus_type_undersong = 157
+bonus_type_camouflage = 158
+bonus_type_focusing_chant = 159
+bonus_type_storm_spell = 161
+bonus_type_curse_of_ill_fortune = 162
+bonus_type_curse_of_impending_blades = 163
+bonus_type_wave_of_grief = 164
+bonus_type_distract = 165
+bonus_type_marshal_aura_minor = 190
+bonus_type_marshal_aura_major = 191
+bonus_type_draconic_aura = 192
+
+#Bonus Value is passed by spell
+passed_by_spell = 0
 
 stat_strength = 0
 stat_dexterity = 1
@@ -3438,8 +3638,12 @@ stat_level_ruby_knight_vindicator = 80
 stat_level_shadow_sun_ninja = 81
 stat_level_fochlucan_lyrist = 82
 stat_level_marshal = 83
+stat_level_dragon_shaman = 84
+stat_level_dragonheart_mage = 85
+stat_level_battle_howler_of_gruumsh = 86
+stat_level_fist_of_the_forest = 87
 stat_level_ultimate_magus = 88
-
+stat_level_unseen_seer = 89
 
 
 
@@ -3624,7 +3828,7 @@ ET_OnGetEffectTooltip = 65 # for those little bonus flags on top of portraits
 ET_OnStatBaseGet = 66 # looks like this is intended to replace StatBaseGet function for Critters with Dispatchers
 ET_OnWeaponGlowType = 67 # Returns the ID of the weapon glow to use (0 = no glow, 1-10 are specific glow types, check mapobjrenderer)
 ET_OnItemForceRemove = 68 # has a single function associated with this - 10104410 int __cdecl ItemForceRemoveCallback_SetItemPadWielderArgs(Dispatcher_Callback_Args args);
-ET_OnGetArmorToHitPenalty = 69 # none exist apparently
+ET_OnGetArmorCheckPenalty = 69
 
 ET_OnGetMaxDexAcBonus = 70
 ET_OnGetSizeCategory = 71
@@ -3993,6 +4197,9 @@ EK_Q_Get_Arcane_Spell_Failure = 0x149 # gets arcane spell failure for (class_enu
 EK_Q_Is_Preferring_One_Handed_Wield = 0x14A # gets arcane spell failure for (class_enum, equip_slot) combo
 EK_Q_Scribe_Scroll_Spell_Level = 0x14B
 EK_Q_Critter_Is_Immune_Paralysis = 0x14C
+EK_Q_Is_Two_Weapon_Fighting = 0x14D
+EK_Q_Left_Is_Primary = 0x14E
+EK_Q_Can_Shield_Bash = 0x14F
 
 EK_LVL_Stats_Activate = 100
 EK_LVL_Stats_Check_Complete = 101
@@ -4089,6 +4296,10 @@ AEC_NEED_A_STRAIGHT_LINE = 23
 AEC_NO_ACTIONS = 24
 AEC_NOT_IN_COMBAT = 25
 AEC_AREA_NOT_SAFE = 26
+AEC_ABILITY_ON_COOLDOWN = 27
+AEC_ALREADY_USED_THIS_TURN = 28
+AEC_ALREADY_ACTIVE = 29
+AEC_SILENCED = 30
 
 
 BM_INSPIRE_COURAGE = 1
@@ -4150,3 +4361,7 @@ SCF_VERBAL = 1
 SCF_SOMATIC = 2
 SCF_XP = 4
 SCF_GP = 8
+
+FEAT_INFO_NO_FEAT_INFO_FLAG = 0
+FEAT_INFO_DISREGARD_PREREQS = 4
+FEAT_INFO_BONUS_ONLY = 8

@@ -69,6 +69,7 @@ struct LegacyD20System : temple::AddressTable
 	void d20SendSignal(objHndl objHnd, D20DispatcherKey dispKey, int64_t arg);
 	void D20SignalPython(const objHndl& handle, const std::string& queryKey, int arg1 = 0, int arg2 = 0);
 	void D20SignalPython(const objHndl& handle, int queryKey, int arg1 = 0, int arg2 = 0);
+	void D20SignalPython(objHndl objHnd, const std::string& queryKey, D20Actn* arg1, int32_t arg2 = 0);
 
 	uint32_t d20Query(objHndl ObjHnd, D20DispatcherKey dispKey);
 	uint32_t d20QueryWithData(objHndl ObjHnd, D20DispatcherKey dispKey, uint32_t arg1, uint32_t arg2);
@@ -175,6 +176,10 @@ enum D20ADF : int {
 	D20ADF_Python = 0x1000000
 };
 
+inline D20ADF & operator |=(D20ADF & lhs, D20ADF rhs) {
+	lhs = static_cast<D20ADF>(lhs | rhs);
+	return lhs;
+}
 
 struct D20Actn{
 public:
@@ -228,6 +233,7 @@ public:
 	int FilterSpellTargets(SpellPacketBody& spellPkt); // returns number of remaining targets
 	D20ADF GetActionDefinitionFlags();
 	bool IsMeleeHit();
+	bool IsHarmful();
 
 	// Python action section
 	D20DispatcherKey GetPythonActionEnum();

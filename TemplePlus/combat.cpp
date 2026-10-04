@@ -127,6 +127,7 @@ public:
 	void apply() override{
 		
 		replaceFunction(0x100628D0, _isCombatActive);
+		replaceFunction(0x100B82E0, _GetCleveVictim);
 
 		// TurnProcessAi
 		replaceFunction<void(__cdecl)(objHndl)>(0x100635E0, [](objHndl obj){
@@ -520,6 +521,14 @@ bool LegacyCombatSystem::AmmoMatchesItemAtSlot(objHndl obj, EquipSlot equipSlot)
 	return weapons.AmmoMatchesWeapon(weapon, ammoItem);
 }
 
+bool LegacyCombatSystem::NeedsToReload(objHndl critter)
+{
+	if (!critter || d20Sys.d20Query(critter, DK_QUE_Polymorphed)) return false;
+
+	auto weapon = critterSys.GetWornItem(critter, EquipSlot::WeaponPrimary);
+	return weapons.IsUnloaded(weapon);
+}
+
 objHndl * LegacyCombatSystem::GetHostileCombatantList(objHndl obj, int * count)
 {
 	int initListLen = GetInitiativeListLength();
@@ -866,6 +875,9 @@ void LegacyCombatSystem::EndTurn()
 	auto actor = tbSys.turnBasedGetCurrentActor();
 	logger->info("EndTurn: actor {}", actor);
 
+	// try to auto-reload
+	critterSys.AutoReload(actor, true);
+
 	if (party.IsInParty(actor)){
 		static auto uiCombatInitiativePortraitsReset = temple::GetRef<int(__cdecl*)(int)>(0x10AA83FC);
 		uiCombatInitiativePortraitsReset(0);
@@ -1174,7 +1186,7 @@ bool LegacyCombatSystem::CombatEnd(){
 		auto N = party.GroupListGetLen();
 		for (auto i=0u; i < N; i++){
 			auto partyMember = party.GroupListGetMemberN(i);
-			temple::GetRef<void(__cdecl)(objHndl)>(0x100B70A0)(partyMember);
+			critterSys.AutoReload(partyMember);
 		}
 		auto combatGiveXp = temple::GetRef<void(__cdecl)()>(0x100B88C0);
 		combatGiveXp();
@@ -1908,7 +1920,9 @@ void LegacyCombatSystem::ToHitProcessingPython(D20Actn& d20a)
 
 bool LegacyCombatSystem::TripCheck(objHndl handle, objHndl target){
 	if (d20Sys.d20Query(target, DK_QUE_Untripable))	{
-		histSys.CreateFromFreeText( combatSys.GetCombatMesLine(171)); 
+		std::string historyLine(combatSys.GetCombatMesLine(171));
+		historyLine.push_back('\n');
+		histSys.CreateFromFreeText(historyLine.c_str());
 		return false;
 	}
 
@@ -1978,6 +1992,29 @@ int LegacyCombatSystem::GetCombatRoundCount()
 uint32_t _isCombatActive()
 {
 	return *combatSys.combatModeActive;
+}
+
+uint64_t _GetCleveVictim(objHndl objHnd)
+{
+	float minReach = 0.0f;
+	const auto reach = critterSys.GetReach(objHnd, D20A_STANDARD_ATTACK, &minReach); 
+	const auto polearmDonutReach = config.disableReachWeaponDonut ? false : true; //Cleve now respects the donut
+	const auto listSize = combatSys.GetInitiativeListLength();
+	for (int i = 0; i < listSize; i++) {
+		auto potentialVictim = combatSys.GetInitiativeListMember(i);
+		if (!combatSys.AffiliationSame(objHnd, potentialVictim)) {
+			if (!critterSys.IsDeadOrUnconscious(potentialVictim) && !actSeqSys.IsObjCurrentActorRegardSimuls(potentialVictim)) {
+				const auto distToTgt = max(0.0f, locSys.DistanceToObj(objHnd, potentialVictim));
+				const bool tooClose = polearmDonutReach && (minReach > 0.0f) && distToTgt < minReach;
+				const bool tooFar = (distToTgt > reach);
+				if (!tooClose && !tooFar) {
+					return potentialVictim.handle;
+				}
+			}
+		}
+	}
+
+	return 0;
 }
 
 uint32_t _IsCloseToParty(objHndl objHnd)

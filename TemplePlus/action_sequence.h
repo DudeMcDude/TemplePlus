@@ -173,13 +173,14 @@ struct ActionSequenceSystem : temple::AddressTable
 		splits up the movement to move -> aoo movement -> move as necessary
 	*/
 	void ProcessSequenceForAoOs(ActnSeq*actSeq, D20Actn * d20a); // actSeq@<ebx>
-	int(CrossBowSthgReload_1008E8A0)(D20Actn *d20a, ActnSeq*actSeq); //, ActnSeq *actSeq@<ebx>
+	ActionErrorCode AppendReloadAttack(ActnSeq *, D20Actn *);
 	uint32_t SequencePathSthgSub_10096450(ActnSeq * actSeq, int idx, TurnBasedStatus* tbStat);
 	//10097C20
 	
 	uint32_t seqCheckFuncs(TurnBasedStatus *tbStatus);
 	void DoAoo(objHndl, objHndl);
 	int32_t DoAoosByAdjcentEnemies(objHndl);
+	int32_t ProvokeAooFrom(objHndl provoker, objHndl enemy);
 	
 	bool SpellTargetsFilterInvalid(D20Actn &d20a);
 	void HandleInterruptSequence();
@@ -218,6 +219,7 @@ struct ActionSequenceSystem : temple::AddressTable
 	uint32_t simulsOk(ActnSeq* actSeq);
 	uint32_t simulsAbort(objHndl);
 	uint32_t isSomeoneAlreadyActingSimult(objHndl objHnd);
+	BOOL IsObjCurrentActorRegardSimuls(objHndl objHnd);
 	BOOL IsSimulsCompleted();
 	BOOL IsLastSimultPopped(objHndl obj); // last one that was popped, that is
 	BOOL IsLastSimulsPerformer(objHndl obj);
@@ -225,7 +227,8 @@ struct ActionSequenceSystem : temple::AddressTable
 	BOOL SimulsAdvance();
 
 	uint32_t ActionCostNull(D20Actn* d20Actn, TurnBasedStatus* turnBasedStatus, ActionCostPacket* actionCostPacket);
-	int (__cdecl *ActionCostReload)(D20Actn *d20, TurnBasedStatus *tbStat, ActionCostPacket *acp); 
+	ActionErrorCode ActionCostReload(D20Actn *d20, TurnBasedStatus *tbStat, ActionCostPacket *acp); 
+	ActionErrorCode ActionCheckReload(D20Actn *d20, TurnBasedStatus *tbStat);
 	int ActionCostFullAttack(D20Actn *d20, TurnBasedStatus *tbStat, ActionCostPacket *acp);
 	void FullAttackCostCalculate(D20Actn *d20a, TurnBasedStatus *tbStatus, int *baseAttackNumCode, int *bonusAttacks, int *numAttacks, int *attackModeCode);
 	int ActionCostProcess(TurnBasedStatus* tbStat, D20Actn* d20a);
@@ -239,7 +242,6 @@ struct ActionSequenceSystem : temple::AddressTable
 private:
 	bool (__cdecl *_actionPerformProjectile)();
 	void (__cdecl *_sub_1008BB40)(D20Actn * d20a); // ActnSeq*actSeq@<ebx>, 
-	int(__cdecl* _CrossBowSthgReload_1008E8A0)(D20Actn *d20a); //, ActnSeq *actSeq@<ebx>
 	uint32_t GetRemainingMaxMoveLength(D20Actn *d20a, TurnBasedStatus *actnSthg, float *floatOut); // doesn't take things like having made 5 foot step into account, just a raw calculation
 	int(__cdecl*_TurnBasedStatusUpdate)(D20Actn* d20Actn, TurnBasedStatus* turnBasedStatus);
 	void (__cdecl *_ProcessPathForReadiedActions)(CmbtIntrpts* d20a); // D20Actn*@<eax>
@@ -255,6 +257,7 @@ private:
 	uint32_t(__cdecl * _moveSeqD20Sthg)(ActnSeq* actSeq, TurnBasedStatus *actnSthg, float a3, float reach, int a5); //, D20Actn * d20aIn @<eax>
 
 	std::unordered_set<int> bardSongStoppingPythonActions;
+	D20DispatcherKey pythonDispatcherKey = DK_NONE;
 };
 
 extern ActionSequenceSystem actSeqSys;

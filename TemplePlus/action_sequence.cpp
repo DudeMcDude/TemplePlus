@@ -38,6 +38,8 @@ static struct ActnSeqAddresses : temple::AddressTable {
 	int(__cdecl*ActionSequenceChecksWithPerformerLocation)();
 	void(__cdecl* ActionSequenceRevertPath)(int d20ActnNum);
 	void(__cdecl*Counterspell_sthg)(ReadiedActionPacket* readiedAction);
+	BOOL(__cdecl* IsObjCurrentActorRegardSimuls)(objHndl obj);
+	
 	PickerArgs * actSeqPicker;
 	D20Actn * actSeqPickerAction;
 	ReadiedActionPacket * readiedActionCache;
@@ -78,6 +80,8 @@ static struct ActnSeqAddresses : temple::AddressTable {
 		rebase(actSeqTargetsIdx, 0x118CD2A0);
 		rebase(actSeqTargets, 0x118CD2A8);
 		rebase(actSeqSpellLoc, 0x118CD3A8);
+
+		rebase(IsObjCurrentActorRegardSimuls, 0x100921F0);
 	}
 
 	
@@ -224,10 +228,6 @@ ActionSequenceSystem::ActionSequenceSystem()
 	rebase(_sub_1008BB40, 0x1008BB40);
 	//rebase(GetRemainingMaxMoveLength, 0x1008B8A0);
 	//rebase(TrimPathToRemainingMoveLength, 0x1008B9A0);
-
-	rebase(_CrossBowSthgReload_1008E8A0, 0x1008E8A0);
-
-	rebase(ActionCostReload, 0x100903B0);
 
 	rebase(_TurnBasedStatusUpdate, 0x10093950);
 	rebase(_combatTriggerSthg, 0x10093890);
@@ -376,6 +376,7 @@ void ActionSequenceSystem::ActSeqGetPicker(){
 			*seqPickerD20ActnType = d20Sys.globD20Action->d20ActType;  // seqPickerD20ActnType
 			*seqPickerD20ActnData1 = d20Sys.globD20Action->data1;
 			*seqPickerTargetingType = D20TC_ItemInteraction;
+			pythonDispatcherKey = d20Sys.globD20Action->GetPythonActionEnum();  //Save off since the action will be reset
 			return;
 		}
 		addresses.actSeqPicker->flagsTarget = UiPickerFlagsTarget::None;
@@ -398,6 +399,7 @@ void ActionSequenceSystem::ActSeqGetPicker(){
 			*seqPickerD20ActnType = d20Sys.globD20Action->d20ActType; //seqPickerD20ActnType
 			*seqPickerD20ActnData1 = d20Sys.globD20Action->data1;
 			*seqPickerTargetingType = D20TC_SingleIncSelf;
+			pythonDispatcherKey = d20Sys.globD20Action->GetPythonActionEnum();  //Save off since the action will be reset
 			return;
 		}
 		addresses.actSeqPicker->flagsTarget = UiPickerFlagsTarget::None;
@@ -424,6 +426,7 @@ void ActionSequenceSystem::ActSeqGetPicker(){
 			*seqPickerD20ActnType = d20Sys.globD20Action->d20ActType;
 			*seqPickerD20ActnData1 = d20Sys.globD20Action->data1;
 			*seqPickerTargetingType = D20TC_SingleExcSelf;
+			pythonDispatcherKey = d20Sys.globD20Action->GetPythonActionEnum();  //Save off since the action will be reset
 			return;
 		}
 		addresses.actSeqPicker->flagsTarget = UiPickerFlagsTarget::None;
@@ -486,11 +489,28 @@ void ActionSequenceSystem::ActSeqGetPicker(){
 		dispatch.DispatchMetaMagicModify(d20Sys.globD20Action->d20APerformer, metaMagicData, spellLevel, spellEnum, spellClass);
 
 		auto curSeq = *actSeqSys.actSeqCur;
-		curSeq->spellPktBody.spellRange *= metaMagicData.metaMagicEnlargeSpellCount + 1;
-		SpellEntry spellEntry;
-		if (spellSys.spellRegistryCopy(spellEnum, &spellEntry)){
-			spellEntry.radiusTarget *= metaMagicData.metaMagicWidenSpellCount + 1;
+		auto wideFactor = metaMagicData.metaMagicWidenSpellCount + 1;
+		auto enlargeFactor = metaMagicData.metaMagicEnlargeSpellCount + 1;
+		SpellEntry spellEntry(spellEnum);
+
+		switch (spellEntry.spellRangeType)
+		{
+		case SRT_Specified:
+			// Specified is used for cones and lines, which widen applies to. For
+			// some reason cones don't use radius to determine the cone length.
+			spellEntry.spellRange *= wideFactor;
+			break;
+
+		case SRT_Close:
+		case SRT_Medium:
+		case SRT_Long:
+			// enlarge spell only applies to these range types
+			curSeq->spellPktBody.spellRange *= enlargeFactor;
+		default:
+			spellEntry.radiusTarget *= wideFactor;
+			break;
 		}
+
 		PickerArgs pickArgs;
 		spellSys.pickerArgsFromSpellEntry(&spellEntry, &pickArgs, curSeq->spellPktBody.caster, curSeq->spellPktBody.casterLevel);
 		pickArgs.spellEnum = spellEnum;
@@ -646,6 +666,10 @@ void ActionSequenceSystem::ActionTypeAutomatedSelection(objHndl handle)
 		|| *seqPickerTargetingType != D20TC_Invalid)
 	{
 		setGlobD20Action(*seqPickerD20ActnType, *seqPickerD20ActnData1);
+		if (d20Sys.globD20Action->d20ActType == D20A_PYTHON_ACTION) {
+			d20Sys.globD20Action->SetPythonActionEnum(pythonDispatcherKey);
+			pythonDispatcherKey = DK_NONE;
+		}
 		return;
 	}
 
@@ -833,7 +857,7 @@ int ActionSequenceSystem::ActionAddToSeq()
 		
 	}
 	if (d20ActnType == D20A_PYTHON_ACTION){
-		d20Sys.globD20ActionKey = (D20DispatcherKey) d20Sys.globD20Action->GetPythonActionEnum();
+		d20Sys.globD20ActionKey = d20Sys.globD20Action->GetPythonActionEnum();
 	}
 	auto actnCheckFunc = d20Sys.d20Defs[d20ActnType].actionCheckFunc;
 	if (actnCheckFunc)
@@ -1113,7 +1137,6 @@ uint32_t ActionSequenceSystem::MoveSequenceParse(D20Actn* d20aIn, ActnSeq* actSe
 		const float fourPointSevenPlusEight = (INCH_PER_SUBTILE/2) + 8.0f;
 		pathQ.flags = static_cast<PathQueryFlags>(PathQueryFlags::PQF_TO_EXACT | PathQueryFlags::PQF_HAS_CRITTER | PathQueryFlags::PQF_800
 			| PathQueryFlags::PQF_TARGET_OBJ | PathQueryFlags::PQF_ADJUST_RADIUS | PathQueryFlags::PQF_ADJ_RADIUS_REQUIRE_LOS);
-		
 		
 		if (reach < 0.1){ reach = 3.0; }
 		actSeq->targetObj = d20a->d20ATarget;
@@ -1721,6 +1744,72 @@ uint32_t ActionSequenceSystem::ActionCostNull(D20Actn* d20Actn, TurnBasedStatus*
 	return 0;
 }
 
+ActionErrorCode ActionSequenceSystem::ActionCostReload(D20Actn *d20, TurnBasedStatus *tbStat, ActionCostPacket *acp)
+{
+	// free action by default
+	acp->hourglassCost = static_cast<int>(ActionCostType::Null);
+	acp->chargeAfterPicker = 0;
+	acp->moveDistCost = 0.0;
+
+	if (d20->d20Caf & D20CAF_FREE_ACTION) return AEC_OK;
+	if (!combatSys.isCombatActive()) return AEC_OK;
+
+	auto weapon = inventory.ItemWornAt(d20->d20APerformer, EquipSlot::WeaponPrimary);
+	if (!weapon) return AEC_OK;
+
+	tbStat->baseAttackNumCode = 0;
+	tbStat->attackModeCode = 0;
+	tbStat->numBonusAttacks = 0;
+	tbStat->surplusMoveDistance = 0;
+
+	// TODO: rapid reload is actually a per-weapon feat per the SRD
+	bool rapid = feats.HasFeatCountByClass(d20->d20APerformer, FEAT_RAPID_RELOAD);
+
+	// costs for reloading heavy/repeating crossbows based on strict rules status
+	auto fastCost = ActionCostType::Null;
+	auto slowCost = ActionCostType::Move;
+
+	if (config.stricterRulesEnforcement) {
+		fastCost = ActionCostType::Move;
+		slowCost = ActionCostType::FullRound;
+	}
+
+	auto cost = ActionCostType::Null;
+
+	switch (objects.GetWeaponType(weapon))
+	{
+	case wt_light_crossbow:
+	case wt_hand_crossbow:
+		if (rapid) break; // free action
+	case wt_sling: // has no rapid reload
+		cost = ActionCostType::Move;
+		break;
+	case wt_heavy_crossbow:
+		cost = fastCost;
+		if (rapid) break;
+	case wt_repeating_crossbow: // has no rapid reload
+		cost = slowCost;
+		break;
+	default:
+		// free action
+		break;
+	}
+
+	acp->hourglassCost = static_cast<int>(cost);
+
+	return AEC_OK;
+}
+
+ActionErrorCode ActionSequenceSystem::ActionCheckReload(D20Actn *d20, TurnBasedStatus *tbStat)
+{
+	/* Note: do not do this. It seems to cause problems with full attacks.
+	if (!combatSys.NeedsToReload(d20a->d20APerformer))
+		return AEC_INVALID_ACTION;
+	*/
+
+	return AEC_OK;
+}
+
 void ActionSequenceSystem::ProcessSequenceForAoOs(ActnSeq* actSeq, D20Actn* d20a)
 {
 	AoOPacket aooPacket;
@@ -1832,22 +1921,30 @@ void ActionSequenceSystem::ProcessSequenceForAoOs(ActnSeq* actSeq, D20Actn* d20a
 	{ __asm pop edi __asm pop ebx __asm pop esi __asm pop ecx}*/
 }
 
-int ActionSequenceSystem::CrossBowSthgReload_1008E8A0(D20Actn* d20a, ActnSeq* actSeq)
+// Used to append reload actions necessary before an attack
+ActionErrorCode ActionSequenceSystem::AppendReloadAttack(ActnSeq *actSeq, D20Actn *d20a)
 {
-	int result = 0;
-	{ __asm push ecx __asm push esi __asm push ebx __asm push edi};;
-	__asm{
-		mov ecx, this;
-		mov esi, [ecx]._CrossBowSthgReload_1008E8A0;
-		mov eax, d20a;
-		push eax;
-		mov ebx, actSeq;
-		call esi;
-		add esp, 4;
-		mov result, eax;
+	// first stand up if prone
+	if (d20Sys.d20Query(d20a->d20APerformer, DK_QUE_Prone)) {
+		D20Actn standUp;
+		standUp = *d20a;
+		standUp.d20ActType = D20A_STAND_UP;
+		actSeq->d20ActArray[actSeq->d20ActArrayNum++] = standUp;
 	}
-	{ __asm pop edi __asm pop ebx __asm pop esi __asm pop ecx} 
-	return result;
+
+	// reload if necessary
+	if (combatSys.NeedsToReload(d20a->d20APerformer)) {
+		D20Actn reload;
+		reload = *d20a;
+		reload.d20ActType = D20A_RELOAD;
+		actSeq->d20ActArray[actSeq->d20ActArrayNum++] = reload;
+	}
+
+	D20Actn attack = *d20a;
+	attack.data1 = 1;
+	actSeq->d20ActArray[actSeq->d20ActArrayNum++] = attack;
+
+	return AEC_OK;
 }
 
 uint32_t ActionSequenceSystem::TurnBasedStatusUpdate(D20Actn* d20a, TurnBasedStatus* tbStatus)
@@ -2125,6 +2222,21 @@ int32_t ActionSequenceSystem::DoAoosByAdjcentEnemies(objHndl obj)
 
 	return status;
 	// return _AOOSthg2_100981C0(obj);
+}
+
+int32_t ActionSequenceSystem::ProvokeAooFrom(objHndl provoker, objHndl enemy)
+{
+	if (!provoker || !enemy) return 0;
+	if (objects.GetFlags(enemy) & OF_INVULNERABLE) // see above
+		return 0;
+
+	if (!combatSys.CanMeleeTarget(enemy, provoker)) return 0;
+	if (critterSys.IsFriendly(provoker, enemy)) return 0;
+	if (!d20Sys.d20QueryWithData(enemy, DK_QUE_AOOPossible, provoker)) return 0;
+	if (!d20Sys.d20QueryWithData(enemy, DK_QUE_AOOWillTake, provoker)) return 0;
+
+	DoAoo(enemy, provoker);
+	return 1;
 }
 
 bool ActionSequenceSystem::SpellTargetsFilterInvalid(D20Actn& d20a){
@@ -2799,13 +2911,25 @@ void ActionSequenceSystem::ActionPerform()
 		} 
 
 		else{
+			bool preempted = false;
+			switch (d20->D20ActionTriggersAoO(d20a, &tbStatus))
+			{
+			case 0:
+				break;
+			case 2:
+				preempted = ProvokeAooFrom(d20a->d20APerformer, d20a->d20ATarget);
+				break;
+			case 1:
+			default:
+				preempted = DoAoosByAdjcentEnemies(d20a->d20APerformer);
+				break;
+			}
 
-			if ( d20->D20ActionTriggersAoO(d20a, &tbStatus) && DoAoosByAdjcentEnemies(d20a->d20APerformer))	{
+			if (preempted) {
 				logger->debug("ActionPerform: \t Sequence Preempted {}", d20a->d20APerformer);
 				--*(curIdx);
 				sequencePerform();
-			} 
-			else{
+			} else {
 				curSeq->tbStatus = tbStatus;
 				*(uint32_t*)(&curSeq->tbStatus.tbsFlags) |= TBSF_HasActedThisRound;
 				InterruptCounterspell(d20a);
@@ -3311,6 +3435,11 @@ uint32_t ActionSequenceSystem::isSomeoneAlreadyActingSimult(objHndl objHnd)
 	return 0;
 }
 
+BOOL ActionSequenceSystem::IsObjCurrentActorRegardSimuls(objHndl objHnd)
+{
+	return addresses.IsObjCurrentActorRegardSimuls(objHnd);
+}
+
 BOOL ActionSequenceSystem::IsSimulsCompleted()
 {
 	auto func =  temple::GetRef<BOOL(__cdecl)()>(0x10092110);
@@ -3374,11 +3503,14 @@ int ActionSequenceSystem::ActionCostFullAttack(D20Actn* d20, TurnBasedStatus* tb
 {
 	acp->chargeAfterPicker = 0;
 	acp->moveDistCost = 0;
-	acp->hourglassCost = 4;
+
+	auto cheap = d20Sys.D20QueryPython(d20->d20APerformer, "Full Attack As Standard");
+	acp->hourglassCost = cheap == 1 ? 2 : 4;
+
 	int flags = d20->d20Caf;
 	if (d20->d20Caf & D20CAF_FREE_ACTION || !combat->isCombatActive() )  
 		acp->hourglassCost = 0;
-	if (tbStat->attackModeCode >= tbStat->baseAttackNumCode && tbStat->hourglassState >= 4 && !tbStat->numBonusAttacks)
+	if (tbStat->attackModeCode >= tbStat->baseAttackNumCode && tbStat->hourglassState >= 2 && !tbStat->numBonusAttacks)
 	{
 		FullAttackCostCalculate(d20, tbStat, (int*)&tbStat->baseAttackNumCode, (int*) &tbStat->numBonusAttacks,
 			(int*)&tbStat->numAttacks,(int*) &tbStat->attackModeCode);
@@ -3398,23 +3530,16 @@ void ActionSequenceSystem::FullAttackCostCalculate(D20Actn* d20a, TurnBasedStatu
 	auto mainWeapon = inventory.ItemWornAt(performer, EquipSlot::WeaponPrimary);
 	auto offhand = inventory.ItemWornAt(performer, EquipSlot::WeaponSecondary);
 
-	if (offhand){
-		if (mainWeapon){
-			if (objects.GetType(offhand) != obj_t_armor) {
-				_attackTypeCodeHigh = ATTACK_CODE_OFFHAND + 1; // originally 5
-				_attackTypeCodeLow = ATTACK_CODE_OFFHAND; // originally 4
-				usingOffhand = 1;
-			}
-		} 
-		else {
-			mainWeapon = offhand;
-		}
+	auto style = critterSys.GetFightingStyle(performer);
 
+	if ((style & FightingStyle::Mask) == FightingStyle::TwoWeapon) {
+		_attackTypeCodeHigh = ATTACK_CODE_OFFHAND + 1; // originally 5
+		_attackTypeCodeLow = ATTACK_CODE_OFFHAND; // originally 4
+		usingOffhand = 1;
 	}
-	if (mainWeapon){
-		int weapFlags = objects.getInt32(mainWeapon, obj_f_weapon_flags);
-		if (weapFlags & OWF_RANGED_WEAPON)
-			d20a->d20Caf |= D20CAF_RANGED;
+
+	if ((style & FightingStyle::Ranged) == FightingStyle::Ranged) {
+		d20a->d20Caf |= D20CAF_RANGED;
 	}
 
 	// if unarmed check natural attacks (for monsters)
@@ -3642,13 +3767,15 @@ int ActionSequenceSystem::UnspecifiedAttackAddToSeq(D20Actn* d20a, ActnSeq* actS
 	// ranged attack handling
 	if (inventory.IsRangedWeapon(weapon)){
 		d20aCopy.d20Caf |= D20CAF_RANGED;
-		if (inventory.IsNormalCrossbow(weapon))	{
+		if (inventory.IsLoadableWeapon(weapon))	{
 			
 			ActionCostReload(d20a, &tbStatCopy, &acp);
+
+			// if reloading isn't free, we can do at most one attack
 			if (acp.hourglassCost)
 			{
 				d20aCopy.d20ActType = D20A_STANDARD_RANGED_ATTACK;
-				return CrossBowSthgReload_1008E8A0(&d20aCopy, actSeq);
+				return AppendReloadAttack(actSeq, &d20aCopy);
 			}
 		}
 		FullAttackCostCalculate(&d20aCopy, &tbStatCopy, &junk, &junk, &numAttacks, &junk );

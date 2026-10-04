@@ -60,6 +60,7 @@ const std::unordered_map<std::string, uint32_t> ItemEnhSpecFlagDict = {
 	{"iesf_shield",IESF_SHIELD },
 	{"iesf_ranged",IESF_RANGED },
 	{"iesf_two_handed", IESF_TWO_HANDED },
+	{"iesf_no_tower_shield", IESF_NO_TOWER_SHIELD },
 
 	{"iesf_melee",IESF_MELEE },
 	{"iesf_thrown",IESF_THROWN },
@@ -648,6 +649,12 @@ bool UiItemCreation::MaaEffectIsApplicable(int effIdx){
 
 					if (!(itEnh.flags & IESF_SHIELD))
 						return false;
+					if ((itEnh.flags & IESF_NO_TOWER_SHIELD)) {
+						const auto spellFailure = itemObj->GetInt32(obj_f_armor_arcane_spell_failure);
+						if (spellFailure > 15) { //Towershields have high arcane failure
+							return false;
+						}
+					}
 				} 
 				else{
 					if (!(itEnh.flags & IESF_ARMOR))
@@ -982,6 +989,14 @@ void UiItemCreation::CraftScrollWandPotionSetItemSpellData(objHndl objHndItem, o
 		}
 		auto newNameId = description.CustomNameNew(newName);
 		obj->SetInt32(obj_f_description, newNameId);
+
+		//Fix name id for fireball and gust of wind otherwise Pishella won't accept them for the golden orb of death
+		if (mScribedScrollSpell == 171) {
+			obj->SetInt32(obj_f_name, 4003);
+		}
+		else if (mScribedScrollSpell == 214) {
+			obj->SetInt32(obj_f_name, 4004);
+		}
 		return;
 	};
 
@@ -1150,7 +1165,7 @@ void UiItemCreation::ItemCreationCraftingCostTexts(int widgetId, objHndl objHndI
 	uint32_t craftingCostCP;
 	uint32_t craftingCostXP;
 	TigRect rect(212 + 108 * mUseCo8Ui, 157, 159, 10);
-	char * prereqString;
+	char * prereqString = nullptr;
 
 	int casterLevelNew = -1;
 	auto itemWorth = 0;

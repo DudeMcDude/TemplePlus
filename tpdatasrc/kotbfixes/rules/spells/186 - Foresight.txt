@@ -2,6 +2,7 @@ School: Divination
 Level: Sor 9
 Level: Wiz 9
 Level: Knowledge 9
+Level: Drd 9
 Component: V
 Component: S
 Casting Time: 1 action
@@ -19,3 +20,4 @@ min_Target: 1
 max_Target: 1
 radius_Target: 0
 ai_type: ai_action_defensive
+source: PHB

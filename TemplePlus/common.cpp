@@ -37,6 +37,9 @@ int BonusList::GetEffectiveBonusSum() const {
 	int result = 0;
 
 	for (size_t i = 0; i < bonCount; ++i) {
+		// need to wait for the rest of the sum first
+		if (IsPenaltyCappedPositive(i)) continue;
+
 		auto& bonus = bonusEntries[i];
 
 		auto value = bonus.bonValue;
@@ -59,6 +62,30 @@ int BonusList::GetEffectiveBonusSum() const {
 		}
 	}
 
+	for (size_t i = 0; i < bonCount; ++i) {
+		// nothing in this loop can reduce result below 1
+		if (result <= 1) break;
+
+		if (!IsPenaltyCappedPositive(i)) continue;
+		if (IsBonusSuppressed(i, nullptr)) continue;
+
+		auto& bonus = bonusEntries[i];
+		auto value = bonus.bonValue;
+
+		size_t capIdx;
+		if (IsBonusCapped(i, &capIdx)) {
+			auto capValue = bonCaps[capIdx].capValue;
+			if (value > 0 && value > capValue) {
+				value = capValue;
+			} else if (value < 0 && value < capValue) {
+				value = capValue;
+			}
+		}
+
+		result += value;
+		if (result < 1) result = 1;
+	}
+
 	if (bonFlags & 1 && result > overallCapHigh.bonValue) {
 		result = overallCapHigh.bonValue;
 	}
@@ -67,6 +94,51 @@ int BonusList::GetEffectiveBonusSum() const {
 	}
 
 	return result;
+}
+
+int BonusList::GetBaseScaled(float factor) const
+{
+	int initial = 0;
+	int exponent = 0;
+
+	for (size_t i = 0; i < bonCount; ++i) {
+		auto& bonus = bonusEntries[i];
+		auto  value = bonus.bonValue;
+
+		if (IsBonusSuppressed(i, nullptr)) continue;
+
+		size_t capIdx;
+		if (IsBonusCapped(i, &capIdx)) {
+			auto capValue = bonCaps[capIdx].capValue;
+
+			if (value > 0 && value > capValue) {
+				value = capValue;
+			} else if (value < 0 && value < capValue) {
+				value = capValue;
+			}
+		}
+
+		if (1 == bonus.bonType) {
+			initial = value;
+		} else {
+			exponent += value;
+		}
+	}
+
+	if (exponent == 0) return initial;
+
+	float scaled = static_cast<float>(initial);
+	if (exponent < 0) {
+		for (int i = 0; i > exponent; i--) {
+			scaled /= factor;
+		}
+	} else {
+		for (int i = 0; i < exponent; i++) {
+			scaled *= factor;
+		}
+	}
+
+	return static_cast<int>(scaled);
 }
 
 /* 0x100E6680 */
@@ -106,6 +178,97 @@ int BonusList::GetHighestBonus() const
 	}
 
 	return result;
+}
+
+int BonusList::GetLargestPenalty() const
+{
+	int result = 0;
+
+	for (size_t i = 0; i < bonCount; ++i) {
+		auto& bonus = bonusEntries[i];
+
+		auto value = bonus.bonValue;
+
+		if (value >= 0) continue;
+
+		size_t capIdx;
+		if (IsPenaltyCapped(i, &capIdx)) {
+			auto capValue = bonCaps[capIdx].capValue;
+
+			if (value < capValue) {
+				value = capValue;
+			}
+		}
+
+		if (!IsBonusSuppressed(i, nullptr) && result > value) {
+			result = value;
+		}
+	}
+
+	if (bonFlags & 2 && result < overallCapLow.bonValue) {
+		result = overallCapLow.bonValue;
+	}
+
+	return result;
+}
+
+void BonusList::Simplify()
+{
+	int presult = 0;
+
+	for (size_t i = 0; i < bonCount; ++i) {
+		if (IsPenaltyCappedPositive(i)) continue;
+
+		auto& bonus = bonusEntries[i];
+		auto value = bonus.bonValue;
+
+		size_t capIdx;
+		if (IsBonusCapped(i, &capIdx)) {
+			auto capValue = bonCaps[capIdx].capValue;
+
+			if (value > 0 && value > capValue) {
+				value = capValue;
+			} else if (value < 0 && value < capValue) {
+				value = capValue;
+			}
+		}
+
+		if (!IsBonusSuppressed(i, nullptr)) {
+			presult += value;
+		}
+	}
+
+	for (size_t i = 0; i < bonCount; ++i) {
+		if (!IsPenaltyCappedPositive(i)) continue;
+
+		auto& bonus = bonusEntries[i];
+		auto value = bonus.bonValue;
+
+		if (IsBonusSuppressed(i, nullptr)) {
+			bonus.bonValue = 0;
+			continue;
+		}
+
+		size_t capIdx;
+		if (IsBonusCapped(i, &capIdx)) {
+			auto capValue = bonCaps[capIdx].capValue;
+			
+			if (value > 0 && value > capValue) {
+				value = capValue;
+			} else if (value < 0 && value < capValue) {
+				value = capValue;
+			}
+		}
+
+		if (presult <= -value) {
+			value = 1 - presult;
+			if (value > 0) value = 0;
+			bonus.bonValue = value;
+			auto newMes = fmt::format("{} (penalty capped)", bonus.bonusMesString);
+			bonus.bonusMesString = bonusSys.CacheCustomText(newMes);
+		}
+		presult += value;
+	}
 }
 
 bool BonusList::IsBonusSuppressed(size_t bonusIdx, size_t* suppressedByIdx) const {
@@ -232,6 +395,14 @@ bool BonusList::IsPenaltyCapped(size_t bonusIdx, size_t* cappedByIdx) const
 	return penaltyValue < restrictiveCap;
 }
 
+bool BonusList::IsPenaltyCappedPositive(size_t bonusIdx) const
+{
+	auto & bonus = bonusEntries[bonusIdx];
+	bool hasFlag = !!(bonus.bonType & PenaltyCapPositive);
+
+	return bonus.bonValue < 0 && hasFlag;
+}
+
 int BonusList::AddBonusWithDesc(int value, int bonType, int mesline, const char* descr)
 {
 	if (AddBonus(value, bonType, mesline ))
@@ -261,7 +432,6 @@ int BonusList::AddBonusFromFeat(int value, int bonType, int mesline, std::string
 }
 
 int BonusList::ModifyBonus(int value, int bonType, int meslineIdentifier){
-	// AddBonus(value, -bonType, meslineIdentifier);
 	MesLine line(meslineIdentifier);	
 	bonusSys.GetBonusMesLine(line);
 	
@@ -337,7 +507,7 @@ int BonusList::AddCapWithCustomDescr(int capType, int capValue, uint32_t bonMesL
 
 
 
-BOOL BonusList::SetOverallCap(int newBonFlags, int newCap, int newCapType, int newCapMesLineNum, char *capDescr) {
+BOOL BonusList::SetOverallCap(int newBonFlags, int newCap, int newCapType, int newCapMesLineNum, const char *capDescr) {
 	if (!newBonFlags)
 		return FALSE;
 
@@ -408,16 +578,13 @@ int BonusList::AddBonus(int value, int bonType, int mesline){
 }
 
 BOOL BonusList::AddBonus(int value, int bonType, std::string & textArg){
-	auto textId = ElfHash::Hash(textArg);
-	auto textCache = bonusSys.customBonusStrings.find(textId);
-	if (textCache == bonusSys.customBonusStrings.end()) {
-		bonusSys.customBonusStrings[textId] = textArg;
-	}
 	if (this->bonCount >= BonusListMax) return FALSE;
+
+	auto mesText = bonusSys.CacheCustomText(textArg);
 
 	this->bonusEntries[this->bonCount].bonValue = value;
 	this->bonusEntries[this->bonCount].bonType = bonType;
-	this->bonusEntries[this->bonCount].bonusMesString = (char*)bonusSys.customBonusStrings[textId].c_str();
+	this->bonusEntries[this->bonCount].bonusMesString = mesText;
 	this->bonusEntries[this->bonCount++].bonusDescr = nullptr;
 	return TRUE;
 }

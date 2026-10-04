@@ -117,6 +117,8 @@ public:
 	void DamageCritter(objHndl attacker, objHndl tgt, DispIoDamage & evtObjDam);
 
 
+	void FastHeal(objHndl critter, int amount);
+
 	void Heal(objHndl target, objHndl healer, const Dice &dice, D20ActionType actionType);
 	
 	void HealSpell(objHndl target, objHndl healer, const Dice &dice, D20ActionType actionType, int spellId);
@@ -124,10 +126,10 @@ public:
 	void HealSubdual(objHndl target, int amount);
 
 	// See D20SavingThrowFlags for flags
-	bool SavingThrow(objHndl obj, objHndl attacker, int dc, SavingThrowType type, int flags);
+	bool SavingThrow(objHndl obj, objHndl attacker, int dc, SavingThrowType type, int flags, const BonusList *bonExtra = nullptr);
 
 	// Save against a spell
-	bool SavingThrowSpell(objHndl obj, objHndl attacker, int dc, SavingThrowType type, int flags, int spellId);
+	bool SavingThrowSpell(objHndl obj, objHndl attacker, int dc, SavingThrowType type, int flags, int spellId, const BonusList *bonExtra = nullptr);
 
 	/*
 		Deals damage that can be reduced by a successful reflex save.
@@ -141,6 +143,9 @@ public:
 	int AddDamageDice(DamagePacket *dmgPkt, int dicePacked, DamageType damType, unsigned int damageMesLine);
 	int AddDamageDiceWithDescr(DamagePacket *dmgPkt, int dicePacked, DamageType damType, unsigned int damageMesLine, char* descr);
 	BOOL DamageTypeMatch(DamageType reduction, DamageType attackType);
+
+	Dice ModifyDamageDiceForSize(Dice &base, int steps);
+
 	Damage();
 private:
 	void Init();

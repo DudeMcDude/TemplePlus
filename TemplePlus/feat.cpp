@@ -156,20 +156,6 @@ LegacyFeatSystem::LegacyFeatSystem()
 	rebase(charEditorClassCode, 0x11E72FC0);	// TODO: move this to the appropriate system
 	rebase(ToEE_WeaponFeatCheck, 0x1007C4F0);
 
-	int _racialFeatsTable[VANILLA_NUM_RACES * 10] = { -1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		-1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		FEAT_SIMPLE_WEAPON_PROFICIENCY_ELF, -1, 0, 0, 0, 0, 0, 0, 0, 0,
-		-1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-
-		-1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		-1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		-1, 0, 0, 0, 0, 0, 0, 0, 0, 0 }; // table presupposes 10 items on each row, terminator character -1
-	int _rangerArcheryFeats[4 * 2] = { FEAT_RANGER_RAPID_SHOT, 2, FEAT_RANGER_MANYSHOT, 6, FEAT_IMPROVED_PRECISE_SHOT_RANGER, 11, -1, -1 };
-	int _rangerTwoWeaponFeats[4 * 2] = { FEAT_TWO_WEAPON_FIGHTING_RANGER, 2, FEAT_IMPROVED_TWO_WEAPON_FIGHTING_RANGER, 6, FEAT_GREATER_TWO_WEAPON_FIGHTING_RANGER, 11, - 1, -1 };
-
-	memcpy(racialFeats, _racialFeatsTable, sizeof(racialFeats));
-	memcpy(rangerArcheryFeats, _rangerArcheryFeats, sizeof(rangerArcheryFeats));
-	memcpy(rangerTwoWeaponFeats, _rangerTwoWeaponFeats, sizeof(rangerTwoWeaponFeats));
 	featPropertiesTable[FEAT_GREATER_TWO_WEAPON_FIGHTING] = 0x10;
 	featPreReqTable[FEAT_GREATER_TWO_WEAPON_FIGHTING].featPrereqs[2].featPrereqCode = 266;
 	featPreReqTable[FEAT_GREATER_TWO_WEAPON_FIGHTING].featPrereqs[2].featPrereqCodeArg = 11;
@@ -1104,6 +1090,7 @@ char* LegacyFeatSystem::GetFeatDescription(feat_enums feat)
 	MesLine mesLine(5000 + feat); 
 
 	if (feat >= FEAT_NONE
+		|| feat == FEAT_IMPROVED_SHIELD_BASH
 		|| feat == FEAT_IMPROVED_DISARM
 		|| feat ==  FEAT_GREATER_WEAPON_SPECIALIZATION
 		|| feat == FEAT_IMPROVED_SUNDER
@@ -1126,7 +1113,9 @@ char* LegacyFeatSystem::GetFeatPrereqDescription(feat_enums feat)
 	MesLine mesLineFeatDesc(10000 + feat); 
 	MesLine mesLineNone(9998);
 	MesHandle * mesHnd = feats.featMes;
+
 	if (feat >= FEAT_NONE
+		|| feat == FEAT_IMPROVED_SHIELD_BASH
 		|| feat == FEAT_IMPROVED_DISARM
 		|| feat == FEAT_GREATER_WEAPON_SPECIALIZATION
 		|| feat == FEAT_IMPROVED_SUNDER
@@ -1572,8 +1561,6 @@ int _IsWeaponSpecializationFeat(feat_enums feat)
 
 uint32_t _WeaponFeatCheck(objHndl objHnd, feat_enums * featArray, uint32_t featArrayLen, Stat classBeingLeveled, WeaponTypes wpnType)
 {
-	if (templeFuncs.sub_100664B0(objHnd, wpnType) == 3){ return 0; } // 3 means weapon size is more than wielder size+1
-
 	if (weapons.IsSimple(wpnType))
 	{
 		if (feats.HasFeatCountByClass(objHnd, FEAT_SIMPLE_WEAPON_PROFICIENCY, classBeingLeveled, 0))
@@ -1673,18 +1660,30 @@ uint32_t _WeaponFeatCheck(objHndl objHnd, feat_enums * featArray, uint32_t featA
 		}
 	}
 
+	auto mprof = FEAT_MARTIAL_WEAPON_PROFICIENCY_ALL;
 	if (wpnType == wt_orc_double_axe)
 	{
-		if (critterSys.GetRace(objHnd) == race_halforc)
-		{
+		auto martial = feats.HasFeatCountByClass(objHnd, mprof, classBeingLeveled, 0);
+
+		if (config.stricterRulesEnforcement) {
+			// orcs treat this as a martial weapon
+			if (critterSys.GetSubcategoryFlags(objHnd) & mc_subtype_orc) {
+				return martial;
+			}
+		} else if (critterSys.GetRace(objHnd) == race_halforc) {
+			// half-orcs don't actually get proficiency in this for some reason,
+			// so only give it if strict rules are off
 			return 1;
 		}
 		return 0;
 	}
 	else if (wpnType == wt_gnome_hooked_hammer)
 	{
+		// Gnomes treat hooked hammers as martial, not automatic proficiency
 		if (critterSys.GetRace(objHnd) == race_gnome)
 		{
+			if (config.stricterRulesEnforcement)
+				return feats.HasFeatCountByClass(objHnd, mprof, classBeingLeveled, 0);
 			return 1;
 		}
 		return 0;
@@ -1693,7 +1692,10 @@ uint32_t _WeaponFeatCheck(objHndl objHnd, feat_enums * featArray, uint32_t featA
 	{
 		if (critterSys.GetRace(objHnd) == race_dwarf)
 		{
-			return 1;
+			// Dwarves treat 1 handing waraxes as martial, not automatic proficiency
+			// no need for martial check because waraxes are always martial for
+			// proficiency, exotic is only for one handing.
+			return !config.stricterRulesEnforcement;
 		}
 		return 0;
 	} else if (wpnType == wt_grenade)

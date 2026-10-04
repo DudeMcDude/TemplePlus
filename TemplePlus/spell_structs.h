@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.h"
+#include "config/config.h"
 
 struct D20Actn;
 const uint32_t SPELL_ENUM_MAX_VANILLA = 802;
@@ -235,7 +236,8 @@ enum SpellSchools : uint32_t
 	School_Necromancy = 7,
 	School_Transmutation = 8,
 	// Added in Temple+
-	School_Invocation = 9
+	School_Invocation = 9,
+	School_Universal = 10
 };
 
 
@@ -297,6 +299,9 @@ struct SpellEntry {
 	explicit SpellEntry(uint32_t spellEnum);
 	bool IsBaseModeTarget(UiPickerType type);
 	int SpellLevelForSpellClass(int spellClass); // returns -1 if none
+	int GetLowestSpellLevel(uint32_t spellEnumIn);  ///Gets lowest level the spell is for any class
+	PnPSource GetSource();
+	bool IsSourceEnabled();
 };
 
 struct ProjectileEntry {

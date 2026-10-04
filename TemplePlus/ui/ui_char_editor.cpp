@@ -156,6 +156,7 @@ public:
 	bool FeatCanPick(feat_enums feat);
 	bool IsSelectingRangerSpec();
 	bool IsClassBonusFeat(feat_enums feat);
+	bool CanDropToNormalSlot(feat_enums feat);
 
 	void FeatsSanitize();
 	void FeatsMultiSelectActivate(feat_enums feat);
@@ -369,20 +370,14 @@ PYBIND11_EMBEDDED_MODULE(char_editor, mm) {
 			if (firstSpellLvl == -1) {
 				auto castingClass = spellSys.GetCastingClass(self.spellClass);
 				if (pythonClassIntegration.HasAdvancedLearning(castingClass)) {
-					int nAdvancedLearningStat = pythonClassIntegration.GetAdvancedLearningClass(castingClass);
-					if (nAdvancedLearningStat != self.spellClass) {
-						firstSpellLvl = spellSys.GetSpellLevelBySpellClass(first, spellSys.GetSpellClass(nAdvancedLearningStat));
-					}
+					firstSpellLvl = pythonClassIntegration.GetAdvancedLearningSpellLevel(castingClass, first);
 				}
 			}
 
 			if (secondSpellLvl == -1) {
 				auto castingClass = spellSys.GetCastingClass(other.spellClass);
 				if (pythonClassIntegration.HasAdvancedLearning(castingClass)) {
-					int nAdvancedLearningStat = pythonClassIntegration.GetAdvancedLearningClass(castingClass);
-					if (nAdvancedLearningStat != other.spellClass) {
-						secondSpellLvl = spellSys.GetSpellLevelBySpellClass(second, spellSys.GetSpellClass(nAdvancedLearningStat));
-					}
+					secondSpellLvl = pythonClassIntegration.GetAdvancedLearningSpellLevel(castingClass, second);
 				}
 			}
 
@@ -559,13 +554,8 @@ PYBIND11_EMBEDDED_MODULE(char_editor, mm) {
 		auto handle = chargen.GetEditedChar();
 		auto &charPkt = chargen.GetCharEditorSelPacket();
 
-		auto featList = feats.GetFeats(handle);
-
-		bool hasMMFeat = false;
-		for (auto feat : featList) {
-			if (feats.IsMetamagicFeat(feat)) {
-				featCount++;
-			}
+		for (auto mmfeat : feats.metamagicFeats) {
+			featCount += feats.HasFeatCountByClass(handle, mmfeat);
 		}
 
 		if (feats.IsMetamagicFeat(charPkt.feat0)) {
@@ -721,10 +711,7 @@ PYBIND11_EMBEDDED_MODULE(char_editor, mm) {
 				if (spData.spellLevel == -1) {
 					int castingClass = spellSys.GetCastingClass(it.spellClass);
 					if (pythonClassIntegration.HasAdvancedLearning(castingClass)) {
-						int nAdvancedLearningStat = pythonClassIntegration.GetAdvancedLearningClass(castingClass);
-						if (nAdvancedLearningStat != castingClass) {
-							spData.spellLevel = spellSys.GetSpellLevelBySpellClass(spEnum, spellSys.GetSpellClass(nAdvancedLearningStat));
-						}
+						spData.spellLevel = pythonClassIntegration.GetAdvancedLearningSpellLevel(castingClass, spData.spellEnum);
 					}
 				}
 			}
@@ -2079,7 +2066,7 @@ BOOL UiCharEditor::FeatsEntryBtnMsg(int widId, TigMsg * msg){
 			mouseFuncs.SetCursorDrawCallback(nullptr, 0);
 			
 			// check if inserted into the normal slot
-			if (featsSelectedBorderRect.ContainsPoint(msgW->x, msgW->y) && IsSelectingNormalFeat()){
+			if (featsSelectedBorderRect.ContainsPoint(msgW->x, msgW->y) && IsSelectingNormalFeat() && CanDropToNormalSlot(feat)){
 				selPkt.feat0 = feat;
 				if (feats.IsFeatMultiSelectMaster(feat))
 					FeatsMultiSelectActivate(feat);
@@ -2698,6 +2685,10 @@ bool UiCharEditor::IsClassBonusFeat(feat_enums feat){
 	return chargen.IsClassBonusFeat(feat);
 }
 
+bool UiCharEditor::CanDropToNormalSlot(feat_enums feat) {
+	return !chargen.IsBonusOnlyFeat(feat);
+}
+
 bool Chargen::IsClassBonusFeat(feat_enums feat) {
 	// mBonusFeats is delivered via the python class API
 	for (auto it : mBonusFeats) {
@@ -3281,6 +3272,24 @@ class UiCharEditorHooks : public TempleFix {
 			return uiCharEditor.ClassCheckComplete();
 		});
 		
+		// Stat
+
+		// Hook for stat increase buttons to reset subsequent levelup state
+		static BOOL (__cdecl*orgStatBtnEvent)(int, TigMsg*) =
+			replaceFunction<BOOL(__cdecl)(int, TigMsg*)>(0x101B0110,
+					[](int widId, TigMsg *msg) {
+						auto &charEdSelPkt = uiCharEditor.GetCharEditorSelPacket();
+						auto pre = charEdSelPkt.statBeingRaised;
+						auto result = orgStatBtnEvent(widId, msg);
+						auto post = charEdSelPkt.statBeingRaised;
+
+						// if we changed to/from intelligence, reset subsequent steps
+						if (pre != post &&
+								(pre == stat_intelligence || post == stat_intelligence)) {
+							temple::GetRef<void(__cdecl)(int)>(0x10143FF0)(1);
+						}
+						return result;
+					});
 
 		// Skill
 
@@ -3524,6 +3533,16 @@ bool Chargen::IsBonusFeatDisregardingPrereqs(feat_enums feat){
 	for (auto it : mBonusFeats) {
 		if (it.featEnum == feat)
 			return (it.flag & FeatInfoFlag::DisregardPrereqs) != 0;
+	}
+
+	return false;
+}
+
+bool Chargen::IsBonusOnlyFeat(feat_enums feat)
+{
+	for (auto it : mBonusFeats) {
+		if (it.featEnum == feat)
+			return (it.flag & FeatInfoFlag::BonusOnly) != 0;
 	}
 
 	return false;

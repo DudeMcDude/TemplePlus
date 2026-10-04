@@ -1,5 +1,6 @@
 from toee import *
 from utilities import *
+import tpdp
 
 def OnBeginSpellCast( spell ):
 	print "Silence OnBeginSpellCast"
@@ -20,23 +21,48 @@ def	OnSpellEffect( spell ):
 
 	spell.duration = 10 * spell.caster_level
 
+	part_name = 'sp-Silence'
+	if spell.spell_radius > 20:
+		part_name = part_name + '-WIDE'
+	else:
+		part_name = part_name + '-FIXED'
+
+	caster = spell.caster
+	packet = tpdp.SpellPacket(spell.id)
+
 	# test whether we targeted the ground or an object
 	if spell.is_object_selected() == 1:
 		target_item = spell.target_list[0]
+		target = target_item.obj
 
-		# allow Will saving throw to negate
-		if target_item.obj.saving_throw_spell( spell.dc, D20_Save_Will, D20STD_F_NONE, spell.caster, spell.id ):
+		avoid = False
+		# If the target is friendly, assume they're willing, since putting
+		# mobile silence on a friendly fighter is a valid tactic.
+		if target != caster and not target.is_friendly(caster):
+			# check spell resistance; need to mark the spell as 'SR: no' to avoid
+			# incorrect AoE behavior under strict rules, so there's no automatic
+			# check.
+			avoid = packet.check_spell_resistance_force(target)
+			if not avoid:
+				# allow Will saving throw to negate
+				avoid = target.saving_throw_spell(
+						spell.dc, D20_Save_Will, D20STD_F_NONE, caster, spell.id)
 
-			# saving throw successful
-			target_item.obj.float_mesfile_line( 'mes\\spell.mes', 30001 )
+				if avoid:
+					# saving throw successful
+					target_item.obj.float_mesfile_line('mes\\spell.mes', 30001)
 
-			game.particles( 'Fizzle', target_item.obj )
-			spell.target_list.remove_target( target_item.obj )
+					game.particles('Fizzle', target)
+				else:
+					# saving throw failed
+					target.float_mesfile_line('mes\\spell.mes', 30002)
+
+		if avoid:
+			spell.spell_end(spell.id, 1) # force end
 		else:
-			# put sp-Silence condition on target
-			target_item.obj.float_mesfile_line( 'mes\\spell.mes', 30002 )
-			spell_obj_partsys_id = game.particles( 'sp-Silence', target_item.obj )
-			target_item.obj.condition_add_with_args( 'sp-Silence', spell.id, spell.duration, 0, spell_obj_partsys_id )
+			spell_obj_partsys_id = game.particles(part_name, target)
+			target.condition_add_with_args(
+					'sp-Silence', spell.id, spell.duration, 0, spell_obj_partsys_id)
 
 	else:
 		# spawn one spell_object object
@@ -53,8 +79,9 @@ def	OnSpellEffect( spell ):
 		spell_obj.set_initiative( caster_init_value )
 
 		# put sp-Silence condition on obj
-		spell_obj_partsys_id = game.particles( 'sp-Silence', spell_obj )
-		spell_obj.condition_add_with_args( 'sp-Silence', spell.id, spell.duration, 0, spell_obj_partsys_id )
+		spell_obj_partsys_id = game.particles(part_name, spell_obj )
+		spell_obj.condition_add_with_args(
+				'sp-Silence', spell.id, spell.duration, 0, spell_obj_partsys_id )
 
 def OnBeginRound( spell ):
 	print "Silence OnBeginRound"

@@ -1741,6 +1741,9 @@ enum D20DispatcherKey : uint32_t {
 	DK_QUE_Is_Preferring_One_Handed_Wield = 0x14A, // e.g. a character with a Buckler can opt to wield a sword one handed so as to not take the -1 to hit penalty
 	DK_QUE_Scribe_Scroll_Spell_Level = 0x14B,
 	DK_QUE_Critter_Is_Immune_Paralysis = 0x14C,
+	DK_QUE_Is_Two_Weapon_Fighting = 0x14D,
+	DK_QUE_Left_Is_Primary = 0x14E,
+	DK_QUE_Can_Shield_Bash = 0x14F,
 
 	DK_LVL_Stats_Activate = 100,
 	DK_LVL_Stats_Check_Complete = 101,
@@ -1878,7 +1881,7 @@ enum enum_disp_type : uint32_t {
 	dispTypeStatBaseGet, // this is actually stat_base + permanent modifiers (basically race)
 	dispTypeWeaponGlowType, // Returns the ID of the weapon glow to use (0 = no glow, 1-10 are specific glow types, check mapobjrenderer)
 	dispTypeItemForceRemove, // has a single function associated with this - 10104410 int __cdecl ItemForceRemoveCallback_SetItemPadWielderArgs(Dispatcher_Callback_Args args);
-	dispTypeArmorToHitPenalty = 69, // none exist apparently
+	dispTypeArmorCheckPenalty = 69, // resurrected
 
 	dispTypeMaxDexAcBonus,
 	dispTypeGetSizeCategory,
@@ -2037,6 +2040,7 @@ enum Stat : uint32_t {
 	stat_level_fochlucan_lyrist = 82,
 	stat_level_marshal = 83,
 	stat_level_ultimate_magus = 88,
+	stat_level_unseen_seer = 89,
 
 
 	stat_hp_max = 0xE4,
@@ -2164,7 +2168,8 @@ enum MonsterSubcategoryFlag: uint32_t
 	mc_subtype_orc = 0x1000000,
 	mc_subtype_reptilian = 0x2000000,
 	mc_subtype_slaadi = 0x4000000,
-	mc_subtype_water = 0x8000000
+	mc_subtype_water = 0x8000000,
+	mc_subtype_native = 0x10000000
 };
 
 enum CritterFlag
@@ -2710,6 +2715,23 @@ enum class AttackPowerType : int
 	Cold
 };
 
+// flags for distinguishing different sorts of level drain.
+enum class LevelDrainType : uint32_t
+{
+	NegativeLevel = 1, // a.k.a. Temp Negative Level
+	DrainedLevel = 2,  // a.k.a. Perm Negative Level
+	LostLevel = 4,     // resurrection level loss
+
+	NoDrainedLevel = 0,
+	NegativeOrDrainedLevel = 3,
+	NegativeOrLostLevel = 5,
+	DrainedOrLostLevel = 6,
+	AllDrainedLevel = 7
+};
+
+LevelDrainType operator&(LevelDrainType l, LevelDrainType r);
+LevelDrainType operator|(LevelDrainType l, LevelDrainType r);
+LevelDrainType operator~(LevelDrainType l);
 
 enum class SavingThrowType : uint32_t {
 	Fortitude = 0,
@@ -2735,7 +2757,7 @@ enum SpellFlags : uint32_t
 	SF_2000 = 0x2000,
 	SF_4000 = 0x4000,
 	SF_8000 = 0x8000,
-	SF_10000 = 0x10000, // Used in goalstatefunc_124
+	SF_10000 = 0x10000, // Used in goalstatefunc_124, might be 'held' or similar
 	SF_20000 = 0x20000,
 	SF_40000 = 0x40000,
 	SF_80000 = 0x80000,
@@ -2748,3 +2770,4 @@ enum SpellFlags : uint32_t
 	SF_4000000 = 0x4000000,
 	SF_SPELL_FLEE = 0x8000000,
 };
+
