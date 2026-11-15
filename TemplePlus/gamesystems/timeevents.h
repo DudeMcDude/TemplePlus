@@ -149,6 +149,7 @@ public:
 	bool LoadGame(GameSystemSaveFile* saveFile) override;
 	void AdvanceTime(uint32_t time) override;
 	const std::string &GetName() const override;
+	void MapScriptTick(); // python map_tick.on_tick(mapId, elapsedMs), anim clock
 
 	void LoadForCurrentMap();
 	void ClearForMapClose();
@@ -210,4 +211,9 @@ private:
 	bool IsInAdvanceTime();
 
 	GameTime mSessionTime;
+private:
+	uint32_t mapTickAccumMs = 0;
+	uint32_t mapTickIntervalMs = 1000;
+	bool mapTickEnabled = true;
+	PyObject *mapTickFunc = nullptr;
 };
