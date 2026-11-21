@@ -4,6 +4,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
 #include <ui/ui.h>
+#include <ui/ui_debug.h>
 #include <ui/widgets/widgets.h>
 #include <tig/tig_startup.h>
 #include <graphics/device.h>
@@ -164,6 +165,7 @@ WidgetScrollBar* GetAdvWidgetScrollbar(LgcyWidgetId id) {
 PYBIND11_EMBEDDED_MODULE(tpgui, m) {
 
 	m.doc() = "Temple+ GUI, used for custom user UIs.";
+	m.def("set_autoplayer_goals", &UISetAutoplayerGoals);
 
 	m.def("game_is_focused", []()->bool {
 		return GetFocus() == tig->GetMainWindow().GetHwnd();

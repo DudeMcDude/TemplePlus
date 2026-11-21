@@ -812,7 +812,9 @@ void GameSystems::InitializeSystems(LoadingScreen& loadingScreen) {
 	loadingScreen.SetProgress(80 / ProgressMax);
 	mPoison = InitializeSystem<PoisonSystem>(loadingScreen);
 	loadingScreen.SetProgress(81 / ProgressMax);
-	mAutoplayer = InitializeSystem<AutoplayerSystem>(loadingScreen);
+	if (vfs->FileExists("templeplus\\lib\\templeplus\\autoplayer.py")) {
+		mAutoplayer = InitializeSystem<AutoplayerSystem>(loadingScreen);
+	}
 }
 
 void GameSystems::EndGame() {

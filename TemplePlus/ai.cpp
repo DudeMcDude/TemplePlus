@@ -3,6 +3,7 @@
 #include <tig/tig_tabparser.h>
 
 #include "ai.h"
+#include "ui/alert_debug.h"
 #include "d20.h"
 #include "combat.h"
 #include "obj.h"
@@ -1074,9 +1075,30 @@ void AiSystem::GetAiFightStatus(objHndl handle, AiFightStatus* status, objHndl* 
 	return;
 }
 
+// Only report a delivery that changed the recipient's combat state.
+template<typename F>
+static void TraceAllyRecruitment(objHndl center, objHndl recipient, int range, const char* reason, F dispatch) {
+	if (!alertDebug::Enabled() || !objects.IsNPC(recipient)) {
+		dispatch();
+		return;
+	}
+	auto engaged = [&]() {
+		AiFightStatus status;
+		aiSys.GetAiFightStatus(recipient, &status, nullptr);
+		return status == AIFS_FIGHTING || tbSys.IsInInitiativeList(recipient);
+	};
+	bool alreadyEngaged = engaged();
+	dispatch();
+	if (!alreadyEngaged && engaged())
+		alertDebug::Record(center, recipient, range, reason);
+}
+
 void AiSystem::AlertAllies(objHndl handle, objHndl alertFrom, int rangeIdx){
 
 	auto rangeTiles = temple::GetRef<int[]>(0x102BD4D0)[rangeIdx];
+	rangeTiles = gameSystems->GetMap().GetAlertDistance(rangeTiles);
+	if (rangeTiles == 0)
+		return;
 	auto tileDelta = locSys.GetTileDeltaMax(alertFrom, handle);
 
 	const int aiTileDeltaMax = 20;
@@ -1090,7 +1112,9 @@ void AiSystem::AlertAllies(objHndl handle, objHndl alertFrom, int rangeIdx){
 			if (!resHandle)
 				continue;
 			if (rangeIdx != 3 || combatSys.HasLineOfAttack(handle, resHandle)){
-				aiSys.AlertAlly(resHandle, alertFrom, handle, rangeIdx);
+				TraceAllyRecruitment(alertFrom, resHandle, rangeTiles, "around agitator", [&]() {
+					aiSys.AlertAlly(resHandle, alertFrom, handle, rangeIdx);
+				});
 			}
 		}
 	}
@@ -1104,7 +1128,9 @@ void AiSystem::AlertAllies(objHndl handle, objHndl alertFrom, int rangeIdx){
 			if (!resHandle)
 				continue;
 			if (rangeIdx != 3 || combatSys.HasLineOfAttack(handle, resHandle)) {
-				aiSys.AlertAlly(resHandle, alertFrom, handle, rangeIdx);
+				TraceAllyRecruitment(handle, resHandle, rangeTiles, "around provoked", [&]() {
+					aiSys.AlertAlly(resHandle, alertFrom, handle, rangeIdx);
+				});
 			}
 		}
 	}
@@ -1151,7 +1177,9 @@ void AiSystem::AlertAlly(objHndl handle, objHndl alertFrom, objHndl alertDispatc
 void AiSystem::AlertAllies2(objHndl handle, objHndl alertFrom)
 {
 	ObjList objList;
-	const int ALLY_ALERTING_DISTANCE = 24;
+	const int ALLY_ALERTING_DISTANCE = gameSystems->GetMap().GetAlertDistance(24);
+	if (ALLY_ALERTING_DISTANCE == 0)
+		return;
 	// test cases:
 	// moathouse frogs - 12 is enough to pull them all in
 	objList.ListRangeTiles(handle, ALLY_ALERTING_DISTANCE, OLC_CRITTERS);
@@ -1198,15 +1226,11 @@ void AiSystem::AlertAllies2(objHndl handle, objHndl alertFrom)
 			}
 		}
 
-		if (aiSys.GetAllegianceStrength(resHandle, handle)) { // check that they have a faction in common
-			aiSys.ProvokeHostility(alertFrom, resHandle, 3, 0);
-			continue;
-		}
-
-		if (factions.HasNullFaction(resHandle) && factions.HasNullFaction(handle)) {
-			if (aiSys.WillKos(resHandle, alertFrom)) {
+		if (aiSys.GetAllegianceStrength(resHandle, handle) ||
+			(factions.HasNullFaction(resHandle) && factions.HasNullFaction(handle) && aiSys.WillKos(resHandle, alertFrom))) {
+			TraceAllyRecruitment(handle, resHandle, ALLY_ALERTING_DISTANCE, "enemy turn", [&]() {
 				aiSys.ProvokeHostility(alertFrom, resHandle, 3, 0);
-			}
+			});
 		}
 
 	}
@@ -1925,7 +1949,7 @@ BOOL AiSystem::ImprovePosition(AiTactic* aiTac){
 					curSeq->d20ActArray[curSeq->d20ActArrayNum - 1].path = truncPath;
 					curSeq->d20ActArray[curSeq->d20ActArrayNum - 1].destLoc = truncPath->to;
 				}
-				else {
+				else if (truncPath) {
 					truncPath->occupiedFlag &= ~1;
 				}
 
