@@ -1073,10 +1073,6 @@ BOOL UiDialogImpl::ResponseWidgetsInit(int w, int h)
 				return TRUE;
 			if (DialogPagingHandleChoice(idx))
 				return TRUE;
-			if (DialogPagingHandleChoice(idx))
-				return TRUE;
-			if (DialogPagingHandleChoice(idx))
-				return TRUE;
 
 			auto result = temple::GetRef<BOOL(__cdecl)(int, TigMsg*)>(0x1014D560)(id, msg);
 			//uiDialog->PcReplyLineExecute(dlgImpl->mSlot, idx);
