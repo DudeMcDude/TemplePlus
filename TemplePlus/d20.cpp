@@ -1197,7 +1197,8 @@ int32_t LegacyD20System::D20ActionTriggersAoO(D20Actn* d20a, TurnBasedStatus* tb
 
 	if (d20a->d20Caf & D20CAF_TOUCH_ATTACK
 		|| d20Sys.GetAttackWeapon(d20a->d20APerformer, d20a->data1, (D20CAF)d20a->d20Caf) 
-		|| dispatch.DispatchD20ActionCheck(d20a, tbStat, dispTypeGetCritterNaturalAttacksNum))
+		|| dispatch.DispatchD20ActionCheck(d20a, tbStat, dispTypeGetCritterNaturalAttacksNum)
+		|| IsExtraNaturalAttackCode(d20a->data1)) // natural weapon blend: armed with natural weapons
 		return 0;
 
 	if (feats.HasFeatCountByClass(d20a->d20APerformer, FEAT_IMPROVED_UNARMED_STRIKE))
@@ -1294,7 +1295,12 @@ bool LegacyD20System::UsingSecondaryWeapon(objHndl obj, int attackCode)
 
 void LegacyD20System::ExtractAttackNumber(objHndl obj, int attackCode, int* attackNumber, int * dualWielding)
 {
-	if (attackCode >= ATTACK_CODE_NATURAL_ATTACK)
+	if (IsExtraNaturalAttackCode(attackCode))
+	{
+		*attackNumber = 1; // natural attacks don't take the iterative penalty
+		*dualWielding = 0;
+	}
+	else if (attackCode >= ATTACK_CODE_NATURAL_ATTACK)
 	{
 		*attackNumber = attackCode - ATTACK_CODE_NATURAL_ATTACK;
 		*dualWielding = 0 ;
@@ -2700,7 +2706,7 @@ ActionErrorCode D20ActionCallbacks::PerformCharge(D20Actn* d20a){
 			d20a->data1 = ATTACK_CODE_NATURAL_ATTACK + 1;
 		}
 		else {
-			d20a->data1 = ATTACK_CODE_PRIMARY + 1;
+			d20a->data1 = naturalBlend::TranslateAttackCode(performer, ATTACK_CODE_PRIMARY + 1, d20a->d20Caf); // unarmed w/ extra natural attacks -> natural attack
 		}
 	}
 
@@ -3223,6 +3229,7 @@ ActionErrorCode D20ActionCallbacks::ActionCostCastSpell(D20Actn * d20a, TurnBase
 	tbStat->baseAttackNumCode = 0;
 	tbStat->numBonusAttacks = 0;
 	tbStat->attackModeCode = 0;
+	naturalBlend::Reset(d20a->d20APerformer);
 
 	ActionErrorCode result = d20Sys.CombatActionCostFromSpellCastingTime(spEntry.castingTimeType, acp->hourglassCost);
 	
@@ -4093,7 +4100,7 @@ ActionErrorCode D20ActionCallbacks::AddToSeqTripAttack(D20Actn* d20a, ActnSeq* a
 
 
 	if (tbStat->tbsFlags & TBSF_FullAttack){
-		d20a->data1 = tbStatCopy.attackModeCode + 1;
+		d20a->data1 = naturalBlend::TranslateAttackCode(d20a->d20APerformer, tbStatCopy.attackModeCode + 1, d20a->d20Caf);
 		d20a->d20Caf |= D20CAF_FULL_ATTACK;
 	}
 
@@ -4205,6 +4212,7 @@ ActionErrorCode D20ActionCallbacks::ActionCostCharge(D20Actn *d20a, TurnBasedSta
 			tbStat->baseAttackNumCode = 0;
 			tbStat->attackModeCode = 0;
 			tbStat->numBonusAttacks = 0;
+			naturalBlend::Reset(d20a->d20APerformer);
 		}
 
 		tbStat->tbsFlags |= TBSF_Movement;
@@ -4229,6 +4237,7 @@ ActionErrorCode D20ActionCallbacks::ActionCostMoveAction(D20Actn *d20, TurnBased
 		tbStat->baseAttackNumCode = 0;
 		tbStat->attackModeCode = 0;
 		tbStat->numBonusAttacks = 0;
+		naturalBlend::Reset(d20->d20APerformer);
 	}
 	return AEC_OK;
 }
@@ -4287,6 +4296,7 @@ ActionErrorCode D20ActionCallbacks::ActionCostWhirlwindAttack(D20Actn* d20a, Tur
 		}
 		tbStat->numBonusAttacks = 0;
 		tbStat->baseAttackNumCode = 0;
+		naturalBlend::Reset(performer);
 		tbStat->numAttacks = numEnemies;
 		tbStat->attackModeCode = ATTACK_CODE_PRIMARY;
 		tbStat->surplusMoveDistance = 0;

@@ -10,7 +10,7 @@
 #include "tig/tig_shader.h"
 #include "ui/ui.h"
 #include "ui/ui_mainmenu.h"
-#include "ui/ui_legacysystems.h" // AUTOPLAYER-HARNESS (local)
+#include "ui/ui_legacysystems.h" // TP_AUTOLOAD (main menu hide / party bar refresh)
 #include "movies.h"
 #include "python/pythonglobal.h"
 #include "mainloop.h"
@@ -181,7 +181,9 @@ int TempleMain(HINSTANCE hInstance, const string &commandLine) {
 	auto &console = tig.GetConsole();
 	console.RunBatchFile("Startup.txt");
 
-	// AUTOPLAYER-HARNESS (local only): optional headless savegame autoload + python autoexec
+	// Startup automation (see docs/startup-automation.md): TP_AUTOLOAD loads a savegame, TP_AUTOEXEC runs one
+	// console/Python command. Both are inert unless the environment variable is set. Used by the autoplayer
+	// and for repeatable playtests.
 	if (auto autoLoad = getenv("TP_AUTOLOAD")) {
 		logger->info("[TP_AUTOLOAD] Loading savegame '{}'", autoLoad);
 		uiSystems.GetMM().Hide();

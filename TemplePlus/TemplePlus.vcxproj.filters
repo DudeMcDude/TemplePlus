@@ -654,6 +654,10 @@
     <ClInclude Include="python\python_debug.h">
       <Filter>python</Filter>
     </ClInclude>
+    <ClInclude Include="python\pybind_common.h">
+      <Filter>python</Filter>
+    </ClInclude>
+    <ClInclude Include="gamesystems\autoplayer.h" />
     <ClInclude Include="python\python_header.h">
       <Filter>python</Filter>
     </ClInclude>
@@ -1039,10 +1043,6 @@
     <ClInclude Include="tig\tig_timer.h">
       <Filter>tig</Filter>
     </ClInclude>
-    <ClInclude Include="python\pybind_common.h">
-      <Filter>python</Filter>
-    </ClInclude>
-    <ClInclude Include="gamesystems\autoplayer.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Mods and Fixes">

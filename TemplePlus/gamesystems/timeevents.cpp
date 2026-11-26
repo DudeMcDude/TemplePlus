@@ -1043,7 +1043,7 @@ void TimeEventSystem::AdvanceTime(uint32_t newTimeMs) {
 	// advance the time played
 
 	timePlayed.timeInMs += timeDeltaMs;
-	mSessionTime += GameTime(0, timeDeltaMs);
+	mSessionTime += GameTime(0, timeDeltaMs); // session time: like time played, but not reset by loading a save
 
 	if (timePlayed.timeInMs > 86400000) {
 		timePlayed.timeInDays += timePlayed.timeInMs / 86400000;

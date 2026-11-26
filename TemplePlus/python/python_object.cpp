@@ -4123,6 +4123,21 @@ static PyObject* PyObjHandle_AiProcess(PyObject *obj, PyObject *args) {
 	Py_RETURN_NONE;
 }
 
+static PyObject* PyObjHandle_AiStrategyExecute(PyObject* obj, PyObject* args) {
+	auto self = GetSelf(obj);
+	if (!self->handle) {
+		return PyInt_FromLong(0);
+	}
+
+	objHndl target = objHndl::null;
+	if (!PyArg_ParseTuple(args, "|O&:objhndl.ai_strategy_execute", &ConvertObjHndl, &target)) {
+		return 0;
+	}
+
+	auto result = aiSys.StrategyParse(self->handle, target);
+	return PyInt_FromLong(result);
+}
+
 static PyObject* PyObjHandle_AiStrategySetCustom(PyObject* obj, PyObject* args) {
 	auto self = GetSelf(obj);
 	if (!self->handle) {

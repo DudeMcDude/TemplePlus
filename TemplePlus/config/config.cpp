@@ -205,6 +205,7 @@ static std::map<PnPSource, string> sourceToName = {
 static ConfigSetting configSettings[] = {
 	CONF_BOOL(skipIntro),
 	CONF_BOOL(anomalyNotices),
+	CONF_BOOL(debugObjHandles),
 	CONF_BOOL(skipLegal),
 	//CONF_BOOL(engineEnhancements),
 	//CONF_BOOL(editor),
@@ -287,6 +288,7 @@ static ConfigSetting configSettings[] = {
 	CONF_BOOL(extendedSpellDescriptions),
 	CONF_INT(walkDistanceFt),
 	CONF_BOOL(newAnimSystem),
+	CONF_BOOL(clothSimGuards),
 	CONF_BOOL(upscaleLinearFiltering),
 	CONF_BOOL(disableChooseRandomSpell_RegardInvulnerableStatus),
 	CONF_BOOL(wildShapeUsableItems),

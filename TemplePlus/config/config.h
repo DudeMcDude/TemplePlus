@@ -60,6 +60,7 @@ struct TemplePlusConfig
 	uint32_t scrollDistance = 10; // Not really sure what this is used for. Previously: -scrolldist
 	std::string defaultModule = "ToEE"; // Previousl: -mod: 
 	bool skipIntro = true;
+	bool debugObjHandles = false; // debug: master handle registry + inventory handle validation (logs to anomalies)
 	bool anomalyNotices = true; // in-game heads-up when an anomaly is detected (playtesting aid)
 	bool skipLegal = true;
 	bool engineEnhancements = true;
@@ -82,6 +83,7 @@ struct TemplePlusConfig
 	bool debugClipping = false;
 	bool drawObjCylinders = false;
 	bool newAnimSystem = false;
+	bool clothSimGuards = true; // Guard the cloth simulation against non-finite/runaway vertices (resets the cloth)
 	float dmGuiScale = 1.0f;
 
 	bool autoUpdate = true;
